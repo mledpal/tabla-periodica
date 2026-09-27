@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#161f36"/>
+      <stop offset="100%" stop-color="#080b12"/>
+    </radialGradient>
+    <linearGradient id="orbit1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#7000ff" stop-opacity="0.2"/>
+    </linearGradient>
+    <linearGradient id="orbit2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff007a" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0.2"/>
+    </linearGradient>
+    <linearGradient id="orbit3" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#00ffaa" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0077ff" stop-opacity="0.2"/>
+    </linearGradient>
+    <radialGradient id="coreGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="30%" stop-color="#7dcfff"/>
+      <stop offset="70%" stop-color="#0066ff"/>
+      <stop offset="100%" stop-color="#001845"/>
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="superGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <rect width="508" height="508" x="2" y="2" rx="126" fill="none" stroke="#253252" stroke-width="3"/>
+
+  <!-- Orbits -->
+  <g transform="translate(256, 256)">
+    <!-- Orbit 1 (Horizontal tilted) -->
+    <ellipse rx="190" ry="68" fill="none" stroke="url(#orbit1)" stroke-width="5" transform="rotate(-30)" filter="url(#glow)"/>
+    <!-- Orbit 2 (Tilted 30) -->
+    <ellipse rx="190" ry="68" fill="none" stroke="url(#orbit2)" stroke-width="5" transform="rotate(30)" filter="url(#glow)"/>
+    <!-- Orbit 3 (Vertical) -->
+    <ellipse rx="190" ry="68" fill="none" stroke="url(#orbit3)" stroke-width="5" transform="rotate(90)" filter="url(#glow)"/>
+
+    <!-- Electrons -->
+    <!-- On Orbit 1 -->
+    <circle cx="164" cy="-95" r="11" fill="#00f0ff" filter="url(#superGlow)"/>
+    <circle cx="164" cy="-95" r="6" fill="#ffffff"/>
+
+    <circle cx="-164" cy="95" r="11" fill="#00f0ff" filter="url(#superGlow)"/>
+    <circle cx="-164" cy="95" r="6" fill="#ffffff"/>
+
+    <!-- On Orbit 2 -->
+    <circle cx="164" cy="95" r="11" fill="#ff007a" filter="url(#superGlow)"/>
+    <circle cx="164" cy="95" r="6" fill="#ffffff"/>
+
+    <circle cx="-164" cy="-95" r="11" fill="#ff007a" filter="url(#superGlow)"/>
+    <circle cx="-164" cy="-95" r="6" fill="#ffffff"/>
+
+    <!-- On Orbit 3 -->
+    <circle cx="0" cy="-190" r="11" fill="#00ffaa" filter="url(#superGlow)"/>
+    <circle cx="0" cy="-190" r="6" fill="#ffffff"/>
+
+    <circle cx="0" cy="190" r="11" fill="#00ffaa" filter="url(#superGlow)"/>
+    <circle cx="0" cy="190" r="6" fill="#ffffff"/>
+
+    <!-- Nucleus Glow & Core -->
+    <circle cx="0" cy="0" r="46" fill="#00f0ff" opacity="0.25" filter="url(#superGlow)"/>
+    <circle cx="0" cy="0" r="34" fill="url(#coreGrad)" filter="url(#glow)"/>
+    <circle cx="-8" cy="-8" r="8" fill="#ffffff" opacity="0.6"/>
+  </g>
+</svg>

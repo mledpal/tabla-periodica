@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mledpal.github.io/tabla-periodica/sitemap.xml

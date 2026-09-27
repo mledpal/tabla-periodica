@@ -1,0 +1,672 @@
+(function(){
+  // DOM Elements
+  const grid = document.getElementById("periodicGrid");
+  const legend = document.getElementById("legend");
+  const groupNumbersHeader = document.getElementById("groupNumbersHeader");
+  const periodNumbersSidebar = document.getElementById("periodNumbersSidebar");
+  const searchInput = document.getElementById("searchInput");
+  const clearSearchBtn = document.getElementById("clearSearchBtn");
+  const colorModeSelect = document.getElementById("colorModeSelect");
+  const phaseFilterGroup = document.getElementById("phaseFilterGroup");
+  const blockFilterGroup = document.getElementById("blockFilterGroup");
+  const elementsCountBadge = document.getElementById("elementsCountBadge");
+  const resetFiltersBtn = document.getElementById("resetFiltersBtn");
+  const heatmapScaleBar = document.getElementById("heatmapScaleBar");
+  const heatmapMinVal = document.getElementById("heatmapMinVal");
+  const heatmapMaxVal = document.getElementById("heatmapMaxVal");
+  const heatmapGradientTrack = document.getElementById("heatmapGradientTrack");
+  const quickTooltip = document.getElementById("quickTooltip");
+
+  // Modal DOM Elements
+  const modalOverlay = document.getElementById("modalOverlay");
+  const closeModalBtn = document.getElementById("closeModal");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const shareElementBtn = document.getElementById("shareElementBtn");
+  const toggleSpinBtn = document.getElementById("toggleSpinBtn");
+  const resetViewBtn = document.getElementById("resetViewBtn");
+  const zoomInBtn = document.getElementById("zoomInBtn");
+  const zoomOutBtn = document.getElementById("zoomOutBtn");
+  const toastNotification = document.getElementById("toastNotification");
+
+  // State
+  let currentNumber = null;
+  let atomViewer = null;
+  let activeCategoryFilter = null;
+  let activePhaseFilter = "all";
+  let activeBlockFilter = "all";
+  let currentColorMode = "cat";
+  let isSpinning = true;
+
+  // ================= BUILD PERIOD & GROUP HEADERS =================
+  function buildHeaders(){
+    // Group headers (1-18)
+    groupNumbersHeader.innerHTML = "";
+    for(let g = 1; g <= 18; g++){
+      const label = document.createElement("div");
+      label.className = "group-num-label";
+      label.textContent = g;
+      groupNumbersHeader.appendChild(label);
+    }
+
+    // Period headers (1-7)
+    periodNumbersSidebar.innerHTML = "";
+    for(let p = 1; p <= 7; p++){
+      const label = document.createElement("div");
+      label.className = "period-num-label";
+      label.style.gridRow = p;
+      label.textContent = p;
+      periodNumbersSidebar.appendChild(label);
+    }
+
+    // Indicators for Lanthanide (row 9) and Actinide (row 10) rows
+    const lRow = document.createElement("div");
+    lRow.className = "period-num-label";
+    lRow.style.gridRow = 9;
+    lRow.textContent = "6*";
+    lRow.title = "Lantánidos (Periodo 6, bloque f)";
+    periodNumbersSidebar.appendChild(lRow);
+
+    const aRow = document.createElement("div");
+    aRow.className = "period-num-label";
+    aRow.style.gridRow = 10;
+    aRow.textContent = "7*";
+    aRow.title = "Actínidos (Periodo 7, bloque f)";
+    periodNumbersSidebar.appendChild(aRow);
+  }
+
+  // ================= BUILD PERIODIC GRID =================
+  function buildGrid(){
+    grid.innerHTML = "";
+
+    // Add elements
+    ELEMENTS.forEach(el => {
+      const cell = document.createElement("div");
+      cell.className = "element-cell";
+      cell.dataset.number = el.n;
+      cell.dataset.symbol = el.s;
+      cell.dataset.cat = el.cat;
+      cell.dataset.block = getBlock(el);
+      cell.dataset.phase = getNormalizedPhase(el);
+      cell.style.gridRow = el.row;
+      cell.style.gridColumn = el.col;
+
+      const weightDisplay = typeof el.w === "number" ? (el.w % 1 === 0 ? el.w : el.w.toFixed(el.w < 10 ? 3 : 2)) : el.w;
+
+      cell.innerHTML = `
+        <div class="cell-top">
+          <span class="num">${el.n}</span>
+          <span class="mass-sub">${weightDisplay}</span>
+        </div>
+        <span class="sym">${el.s}</span>
+        <span class="nm">${el.name}</span>
+      `;
+
+      // Events
+      cell.addEventListener("click", () => openModal(el.n));
+      cell.addEventListener("mouseenter", (e) => showQuickTooltip(e, el));
+      cell.addEventListener("mouseleave", hideQuickTooltip);
+
+      grid.appendChild(cell);
+    });
+
+    // Placeholders for Lanthanides (57-71) and Actinides (89-103) in main body
+    const lanthHolder = document.createElement("div");
+    lanthHolder.className = "placeholder-cell";
+    lanthHolder.style.gridRow = 6;
+    lanthHolder.style.gridColumn = 3;
+    lanthHolder.innerHTML = '<span>57-71</span><span class="ph-range">La-Lu</span>';
+    lanthHolder.title = "Ver serie de los Lantánidos (Tierras raras)";
+    lanthHolder.addEventListener("click", () => highlightSeries("lantanido"));
+    grid.appendChild(lanthHolder);
+
+    const actinHolder = document.createElement("div");
+    actinHolder.className = "placeholder-cell";
+    actinHolder.style.gridRow = 7;
+    actinHolder.style.gridColumn = 3;
+    actinHolder.innerHTML = '<span>89-103</span><span class="ph-range">Ac-Lr</span>';
+    actinHolder.title = "Ver serie de los Actínidos";
+    actinHolder.addEventListener("click", () => highlightSeries("actinido"));
+    grid.appendChild(actinHolder);
+
+    applyColorMode();
+  }
+
+  function highlightSeries(cat){
+    toggleCategoryFilter(cat);
+  }
+
+  // ================= TOOLTIP =================
+  function showQuickTooltip(e, el){
+    const rect = e.currentTarget.getBoundingClientRect();
+    const catName = CATEGORY_LABELS[el.cat] || el.cat;
+    const block = getBlock(el).toUpperCase();
+    const weight = el.w + " u";
+
+    quickTooltip.innerHTML = `
+      <div class="tooltip-header">
+        <span style="color: var(--accent); font-family: 'JetBrains Mono', monospace;">[${el.n}] ${el.s}</span>
+        <span>${el.name}</span>
+      </div>
+      <div class="tooltip-meta">${catName} · Bloque ${block} · ${el.phase} · ${weight}</div>
+    `;
+
+    quickTooltip.style.left = (rect.left + rect.width / 2) + "px";
+    quickTooltip.style.top = (rect.top - 6) + "px";
+    quickTooltip.style.display = "block";
+  }
+
+  function hideQuickTooltip(){
+    quickTooltip.style.display = "none";
+  }
+
+  // ================= LEGEND =================
+  function buildLegend(){
+    legend.innerHTML = "";
+    Object.keys(CATEGORY_LABELS).forEach(cat => {
+      const count = ELEMENTS.filter(e => e.cat === cat).length;
+      const item = document.createElement("div");
+      item.className = "legend-item";
+      item.dataset.cat = cat;
+      item.innerHTML = `
+        <span class="legend-swatch cat-${cat}"></span>
+        <span>${CATEGORY_LABELS[cat]} (${count})</span>
+      `;
+      item.addEventListener("click", () => toggleCategoryFilter(cat));
+      legend.appendChild(item);
+    });
+  }
+
+  function toggleCategoryFilter(cat){
+    activeCategoryFilter = (activeCategoryFilter === cat) ? null : cat;
+    document.querySelectorAll(".legend-item").forEach(li => {
+      li.classList.toggle("active-filter", activeCategoryFilter === li.dataset.cat);
+      li.classList.toggle("disabled", activeCategoryFilter && li.dataset.cat !== activeCategoryFilter);
+    });
+    applyFilters();
+  }
+
+  // ================= COLOR MODES & HEATMAPS =================
+  function applyColorMode(){
+    currentColorMode = colorModeSelect.value;
+    const cells = document.querySelectorAll(".element-cell");
+
+    if(currentColorMode === "cat"){
+      heatmapScaleBar.style.display = "none";
+      legend.style.display = "flex";
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        cell.className = `element-cell cat-${el.cat}`;
+        cell.style.background = "";
+        cell.style.color = "";
+      });
+    }
+    else if(currentColorMode === "block"){
+      heatmapScaleBar.style.display = "none";
+      legend.style.display = "none";
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        const block = getBlock(el);
+        cell.className = `element-cell block-${block}`;
+        cell.style.background = "";
+        cell.style.color = "";
+      });
+    }
+    else if(currentColorMode === "phase"){
+      heatmapScaleBar.style.display = "none";
+      legend.style.display = "none";
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        const phase = getNormalizedPhase(el);
+        cell.className = `element-cell phase-${phase}`;
+        cell.style.background = "";
+        cell.style.color = "";
+      });
+    }
+    else if(currentColorMode === "electroneg"){
+      legend.style.display = "none";
+      heatmapScaleBar.style.display = "flex";
+      heatmapMinVal.textContent = "0.70 (Fr)";
+      heatmapMaxVal.textContent = "3.98 (F)";
+      heatmapGradientTrack.style.background = "linear-gradient(90deg, #1e3a8a, #06b6d4, #10b981, #f59e0b, #ef4444)";
+
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        cell.className = "element-cell";
+        if(el.en === null){
+          cell.style.background = "#1e293b";
+          cell.style.color = "#64748b";
+        } else {
+          // Normalize from 0.7 to 4.0
+          const ratio = Math.max(0, Math.min(1, (el.en - 0.7) / (4.0 - 0.7)));
+          cell.style.background = interpolateColor(ratio, [
+            [0.0, [30, 58, 138]],
+            [0.25, [6, 182, 212]],
+            [0.5, [16, 185, 129]],
+            [0.75, [245, 158, 11]],
+            [1.0, [239, 68, 68]]
+          ]);
+          cell.style.color = ratio > 0.4 ? "#07090e" : "#f0f4fc";
+        }
+      });
+    }
+    else if(currentColorMode === "density"){
+      legend.style.display = "none";
+      heatmapScaleBar.style.display = "flex";
+      heatmapMinVal.textContent = "0.00009 g/cm³ (H)";
+      heatmapMaxVal.textContent = "22.59 g/cm³ (Os)";
+      heatmapGradientTrack.style.background = "linear-gradient(90deg, #0f172a, #0284c7, #8b5cf6, #ec4899, #fbbf24)";
+
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        cell.className = "element-cell";
+        if(el.den === null){
+          cell.style.background = "#1e293b";
+          cell.style.color = "#64748b";
+        } else {
+          // Logarithmic density scale
+          const logVal = Math.log10(el.den + 0.0001);
+          const minLog = Math.log10(0.00009 + 0.0001);
+          const maxLog = Math.log10(22.59 + 0.0001);
+          const ratio = Math.max(0, Math.min(1, (logVal - minLog) / (maxLog - minLog)));
+
+          cell.style.background = interpolateColor(ratio, [
+            [0.0, [15, 23, 42]],
+            [0.3, [2, 132, 199]],
+            [0.6, [139, 92, 246]],
+            [0.85, [236, 72, 153]],
+            [1.0, [251, 191, 36]]
+          ]);
+          cell.style.color = ratio > 0.5 ? "#07090e" : "#f0f4fc";
+        }
+      });
+    }
+    else if(currentColorMode === "year"){
+      legend.style.display = "none";
+      heatmapScaleBar.style.display = "flex";
+      heatmapMinVal.textContent = "Antigüedad (Oro, Hierro...)";
+      heatmapMaxVal.textContent = "2010 (Teneso)";
+      heatmapGradientTrack.style.background = "linear-gradient(90deg, #d97706, #059669, #0284c7, #6366f1, #d946ef)";
+
+      cells.forEach(cell => {
+        const num = parseInt(cell.dataset.number, 10);
+        const el = ELEMENTS_BY_NUMBER[num];
+        cell.className = "element-cell";
+        const yr = parseInt(el.year, 10);
+        let ratio;
+        if(isNaN(yr)) ratio = 0; // Antigüedad
+        else ratio = Math.max(0.1, Math.min(1, (yr - 1600) / (2010 - 1600)));
+
+        cell.style.background = interpolateColor(ratio, [
+          [0.0, [217, 119, 6]],
+          [0.3, [5, 150, 105]],
+          [0.6, [2, 132, 199]],
+          [0.85, [99, 102, 241]],
+          [1.0, [217, 70, 239]]
+        ]);
+        cell.style.color = ratio > 0.4 && ratio < 0.8 ? "#07090e" : "#fff";
+      });
+    }
+
+    applyFilters();
+  }
+
+  function interpolateColor(ratio, stops){
+    for(let i = 0; i < stops.length - 1; i++){
+      const [pos1, col1] = stops[i];
+      const [pos2, col2] = stops[i + 1];
+      if(ratio >= pos1 && ratio <= pos2){
+        const factor = (ratio - pos1) / (pos2 - pos1);
+        const r = Math.round(col1[0] + factor * (col2[0] - col1[0]));
+        const g = Math.round(col1[1] + factor * (col2[1] - col1[1]));
+        const b = Math.round(col1[2] + factor * (col2[2] - col1[2]));
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+    }
+    return `rgb(${stops[stops.length - 1][1].join(",")})`;
+  }
+
+  // ================= FILTERS & SEARCH =================
+  function applyFilters(){
+    const query = searchInput.value.trim().toLowerCase();
+    let visibleCount = 0;
+
+    // Toggle clear search button
+    clearSearchBtn.style.display = query ? "block" : "none";
+
+    document.querySelectorAll(".element-cell").forEach(cell => {
+      const num = parseInt(cell.dataset.number, 10);
+      const el = ELEMENTS_BY_NUMBER[num];
+      let visible = true;
+
+      // Category filter
+      if(activeCategoryFilter && el.cat !== activeCategoryFilter) visible = false;
+
+      // Phase filter
+      if(activePhaseFilter !== "all" && getNormalizedPhase(el) !== activePhaseFilter) visible = false;
+
+      // Block filter
+      if(activeBlockFilter !== "all" && getBlock(el) !== activeBlockFilter) visible = false;
+
+      // Search query
+      if(query){
+        const matchesName = el.name.toLowerCase().includes(query);
+        const matchesSymbol = el.s.toLowerCase() === query || el.s.toLowerCase().startsWith(query);
+        const matchesNum = String(el.n) === query;
+        const matchesCategory = (CATEGORY_LABELS[el.cat] || "").toLowerCase().includes(query);
+        const matchesYear = String(el.year).toLowerCase().includes(query);
+        if(!matchesName && !matchesSymbol && !matchesNum && !matchesCategory && !matchesYear) {
+          visible = false;
+        }
+      }
+
+      cell.classList.toggle("dimmed", !visible);
+      if(visible) visibleCount++;
+    });
+
+    elementsCountBadge.textContent = `${visibleCount} / 118 elementos`;
+
+    const hasActiveFilters = activeCategoryFilter !== null ||
+                             activePhaseFilter !== "all" ||
+                             activeBlockFilter !== "all" ||
+                             query.length > 0;
+    resetFiltersBtn.style.display = hasActiveFilters ? "flex" : "none";
+  }
+
+  function resetFilters(){
+    activeCategoryFilter = null;
+    activePhaseFilter = "all";
+    activeBlockFilter = "all";
+    searchInput.value = "";
+
+    document.querySelectorAll(".legend-item").forEach(li => {
+      li.classList.remove("active-filter", "disabled");
+    });
+    document.querySelectorAll("#phaseFilterGroup .filter-chip").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.phase === "all");
+    });
+    document.querySelectorAll("#blockFilterGroup .filter-chip").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.block === "all");
+    });
+
+    applyFilters();
+  }
+
+  // ================= MODAL & 3D VIEWER =================
+  function openModal(number, updateHistory = true){
+    currentNumber = number;
+    const el = ELEMENTS_BY_NUMBER[number];
+    if(!el) return;
+
+    // Symbol & Category
+    const bigSymbol = document.getElementById("bigSymbol");
+    bigSymbol.textContent = el.s;
+    bigSymbol.className = `big-symbol cat-${el.cat}`;
+    document.getElementById("elementName").textContent = el.name;
+    document.getElementById("categoryTag").textContent = CATEGORY_LABELS[el.cat];
+    document.getElementById("blockTag").textContent = `Bloque ${getBlock(el).toUpperCase()}`;
+    document.getElementById("phaseTag").textContent = el.phase;
+    document.getElementById("atomicNumberBadge").textContent = `Z = ${el.n}`;
+
+    // Particles
+    const protons = el.n;
+    const neutrons = Math.max(0, el.m - el.n);
+    const electrons = el.n;
+    document.getElementById("protonCount").textContent = protons;
+    document.getElementById("neutronCount").textContent = neutrons;
+    document.getElementById("electronCount").textContent = electrons;
+
+    // Properties
+    const weightLabel = (el.w % 1 === 0) ? `[${el.w}]` : el.w;
+    document.getElementById("dataMass").textContent = `${weightLabel} u (Isótopo ref: ${el.m})`;
+    document.getElementById("dataPeriodGroup").textContent = `Periodo ${periodOf(el)} · Grupo ${groupOf(el)}`;
+    document.getElementById("dataPhase").textContent = el.phase;
+    document.getElementById("dataDensity").textContent = el.den !== null ? `${el.den} g/cm³` : "Desconocida";
+
+    // Electronegativity with visual Pauling gauge
+    if(el.en !== null){
+      document.getElementById("dataElectroneg").textContent = `${el.en} (Pauling)`;
+      const pct = Math.min(100, Math.max(0, (el.en / 4.0) * 100));
+      document.getElementById("electronegGauge").style.width = `${pct}%`;
+    } else {
+      document.getElementById("dataElectroneg").textContent = "Sin datos";
+      document.getElementById("electronegGauge").style.width = "0%";
+    }
+
+    // Melting & Boiling in K and °C
+    if(el.mp !== null){
+      const c = kelvinToCelsius(el.mp);
+      document.getElementById("dataMelting").textContent = `${el.mp} K (${c} °C)`;
+    } else {
+      document.getElementById("dataMelting").textContent = "Desconocido";
+    }
+
+    if(el.bp !== null){
+      const c = kelvinToCelsius(el.bp);
+      document.getElementById("dataBoiling").textContent = `${el.bp} K (${c} °C)`;
+    } else {
+      document.getElementById("dataBoiling").textContent = "Desconocido";
+    }
+
+    document.getElementById("dataConfig").textContent = el.cfg;
+    document.getElementById("dataYear").textContent = isNaN(parseInt(el.year, 10)) ? el.year : `Año ${el.year}`;
+    document.getElementById("elementSummary").textContent = el.desc;
+
+    // Bohr Shells breakdown
+    const shells = getShellOccupancy(el.cfg);
+    const shellBadges = shells.map((count, idx) => {
+      const letter = SHELL_LETTERS[idx] || `n=${idx+1}`;
+      return `<strong>${letter}</strong>: ${count}`;
+    }).join(" &nbsp;·&nbsp; ");
+
+    document.getElementById("shellInfo").innerHTML = `Capas Bohr (${shells.length}):<br>${shellBadges}`;
+
+    // Open Modal Overlay
+    modalOverlay.classList.add("active");
+    document.body.style.overflow = "hidden";
+
+    if(!atomViewer){
+      atomViewer = new AtomViewer(document.getElementById("atomCanvasContainer"));
+    }
+
+    // Render atom
+    requestAnimationFrame(() => {
+      atomViewer.onResize();
+      atomViewer.render(el, shells);
+    });
+
+    updateNavButtons();
+
+    // Deep linking: Update URL hash for sharing / SEO bookmarking
+    if(updateHistory){
+      history.replaceState({ element: el.s }, `${el.name} (${el.s}) - Tabla Periódica 3D`, `#${el.s}`);
+    }
+  }
+
+  function periodOf(el){
+    if(el.cat === "lantanido") return "6 (f)";
+    if(el.cat === "actinido") return "7 (f)";
+    return String(el.row);
+  }
+
+  function groupOf(el){
+    if(el.cat === "lantanido" || el.cat === "actinido") return "3 (bloque f)";
+    return String(el.col);
+  }
+
+  function updateNavButtons(){
+    prevBtn.disabled = currentNumber <= 1;
+    nextBtn.disabled = currentNumber >= 118;
+    prevBtn.style.opacity = prevBtn.disabled ? 0.3 : 1;
+    nextBtn.style.opacity = nextBtn.disabled ? 0.3 : 1;
+  }
+
+  function closeModal(){
+    modalOverlay.classList.remove("active");
+    document.body.style.overflow = "";
+    currentNumber = null;
+    hideQuickTooltip();
+    // Clean URL hash without reloading
+    history.replaceState(null, document.title, window.location.pathname + window.location.search);
+  }
+
+  // ================= TOAST NOTIFICATION =================
+  let toastTimer = null;
+  function showToast(message){
+    toastNotification.textContent = message;
+    toastNotification.classList.add("show");
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastNotification.classList.remove("show");
+    }, 3000);
+  }
+
+  // ================= EVENT LISTENERS =================
+
+  // Search input & Clear button
+  searchInput.addEventListener("input", applyFilters);
+  clearSearchBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    applyFilters();
+    searchInput.focus();
+  });
+
+  // Color Mode dropdown
+  colorModeSelect.addEventListener("change", applyColorMode);
+
+  // Phase filter buttons
+  phaseFilterGroup.addEventListener("click", (e) => {
+    const chip = e.target.closest(".filter-chip");
+    if(!chip) return;
+    phaseFilterGroup.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    activePhaseFilter = chip.dataset.phase;
+    applyFilters();
+  });
+
+  // Block filter buttons
+  blockFilterGroup.addEventListener("click", (e) => {
+    const chip = e.target.closest(".filter-chip");
+    if(!chip) return;
+    blockFilterGroup.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    activeBlockFilter = chip.dataset.block;
+    applyFilters();
+  });
+
+  // Reset all filters button
+  resetFiltersBtn.addEventListener("click", resetFilters);
+
+  // Modal navigation & close
+  prevBtn.addEventListener("click", () => {
+    if(currentNumber > 1) openModal(currentNumber - 1);
+  });
+  nextBtn.addEventListener("click", () => {
+    if(currentNumber < 118) openModal(currentNumber + 1);
+  });
+  closeModalBtn.addEventListener("click", closeModal);
+  modalOverlay.addEventListener("click", (e) => {
+    if(e.target === modalOverlay) closeModal();
+  });
+
+  // 3D Controls Overlay Buttons
+  toggleSpinBtn.addEventListener("click", () => {
+    if(atomViewer){
+      isSpinning = atomViewer.toggleAutoRotate();
+      toggleSpinBtn.innerHTML = isSpinning
+        ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
+        : `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+      toggleSpinBtn.title = isSpinning ? "Pausar giro automático" : "Reanudar giro automático";
+    }
+  });
+  resetViewBtn.addEventListener("click", () => {
+    if(atomViewer) atomViewer.resetView();
+  });
+  zoomInBtn.addEventListener("click", () => {
+    if(atomViewer) atomViewer.zoomIn();
+  });
+  zoomOutBtn.addEventListener("click", () => {
+    if(atomViewer) atomViewer.zoomOut();
+  });
+
+  // Share direct URL button
+  shareElementBtn.addEventListener("click", () => {
+    const el = ELEMENTS_BY_NUMBER[currentNumber];
+    if(!el) return;
+    const shareUrl = `${window.location.origin}${window.location.pathname}#${el.s}`;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showToast(`¡Enlace al ${el.name} (${el.s}) copiado!`);
+      }).catch(() => {
+        showToast(`Enlace: ${shareUrl}`);
+      });
+    } else {
+      showToast(`Enlace: ${shareUrl}`);
+    }
+  });
+
+  // Keyboard Navigation & Shortcuts
+  document.addEventListener("keydown", (e) => {
+    // Quick search shortcut "/"
+    if(e.key === "/" && document.activeElement !== searchInput && !modalOverlay.classList.contains("active")){
+      e.preventDefault();
+      searchInput.focus();
+      return;
+    }
+
+    if(modalOverlay.classList.contains("active")){
+      if(e.key === "Escape") closeModal();
+      if(e.key === "ArrowRight" && currentNumber < 118) openModal(currentNumber + 1);
+      if(e.key === "ArrowLeft" && currentNumber > 1) openModal(currentNumber - 1);
+      if(e.key === " " && atomViewer){
+        e.preventDefault();
+        toggleSpinBtn.click();
+      }
+    } else {
+      if(e.key === "Escape" && document.activeElement === searchInput){
+        searchInput.value = "";
+        applyFilters();
+        searchInput.blur();
+      }
+    }
+  });
+
+  // Deep linking URL Hash routing on page load or back/forward
+  function checkUrlHash(){
+    const hash = window.location.hash.replace("#", "").trim().toLowerCase();
+    if(!hash) return;
+
+    // Check if numeric
+    const num = parseInt(hash, 10);
+    if(!isNaN(num) && ELEMENTS_BY_NUMBER[num]){
+      openModal(num, false);
+      return;
+    }
+
+    // Check by symbol
+    if(ELEMENTS_BY_SYMBOL[hash]){
+      openModal(ELEMENTS_BY_SYMBOL[hash].n, false);
+      return;
+    }
+
+    // Check by element name
+    const foundByName = ELEMENTS.find(e => e.name.toLowerCase() === hash);
+    if(foundByName){
+      openModal(foundByName.n, false);
+    }
+  }
+
+  window.addEventListener("hashchange", checkUrlHash);
+
+  // Initialize
+  buildHeaders();
+  buildGrid();
+  buildLegend();
+  checkUrlHash();
+
+})();
