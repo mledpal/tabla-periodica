@@ -217,3 +217,48 @@ function shortConfig(configStr){
   }
   return configStr;
 }
+
+// Estados de oxidación más comunes (por número atómico). Del 109 en adelante no hay datos experimentales.
+const OXIDATION_STATES = {
+  1: "−1, +1", 2: "0", 3: "+1", 4: "+2", 5: "+3", 6: "−4, +2, +4", 7: "−3, +3, +5", 8: "−2", 9: "−1", 10: "0",
+  11: "+1", 12: "+2", 13: "+3", 14: "−4, +4", 15: "−3, +3, +5", 16: "−2, +2, +4, +6", 17: "−1, +1, +3, +5, +7", 18: "0",
+  19: "+1", 20: "+2", 21: "+3", 22: "+2, +3, +4", 23: "+2, +3, +4, +5", 24: "+2, +3, +6", 25: "+2, +3, +4, +6, +7",
+  26: "+2, +3", 27: "+2, +3", 28: "+2", 29: "+1, +2", 30: "+2", 31: "+3", 32: "−4, +2, +4", 33: "−3, +3, +5",
+  34: "−2, +4, +6", 35: "−1, +1, +3, +5", 36: "0, +2", 37: "+1", 38: "+2", 39: "+3", 40: "+4", 41: "+3, +5",
+  42: "+4, +6", 43: "+4, +7", 44: "+3, +4", 45: "+3", 46: "+2, +4", 47: "+1", 48: "+2", 49: "+3", 50: "+2, +4",
+  51: "−3, +3, +5", 52: "−2, +4, +6", 53: "−1, +1, +5, +7", 54: "0, +2, +4, +6", 55: "+1", 56: "+2", 57: "+3",
+  58: "+3, +4", 59: "+3", 60: "+3", 61: "+3", 62: "+2, +3", 63: "+2, +3", 64: "+3", 65: "+3", 66: "+3", 67: "+3",
+  68: "+3", 69: "+3", 70: "+2, +3", 71: "+3", 72: "+4", 73: "+5", 74: "+4, +6", 75: "+4, +7", 76: "+4", 77: "+3, +4",
+  78: "+2, +4", 79: "+1, +3", 80: "+1, +2", 81: "+1, +3", 82: "+2, +4", 83: "+3", 84: "−2, +2, +4", 85: "−1, +1",
+  86: "0, +2", 87: "+1", 88: "+2", 89: "+3", 90: "+4", 91: "+5", 92: "+3, +4, +5, +6", 93: "+5", 94: "+3, +4",
+  95: "+3", 96: "+3", 97: "+3", 98: "+3", 99: "+3", 100: "+3", 101: "+3", 102: "+2", 103: "+3", 104: "+4",
+  105: "+5", 106: "+6", 107: "+7", 108: "+8"
+};
+
+// Títulos de Wikipedia en español que necesitan desambiguación
+const WIKI_TITLES = { "Mercurio": "Mercurio (elemento)", "Radio": "Radio (elemento)", "Indio": "Indio (elemento)", "Tulio": "Tulio (elemento)", "Curio": "Curio (elemento)" };
+
+function wikipediaUrl(el){
+  const title = WIKI_TITLES[el.name] || el.name;
+  return `https://es.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+}
+
+// Electrones de la capa más externa (capa de valencia en el modelo de Bohr)
+function outerShellElectrons(el){
+  const shells = getShellOccupancy(el.cfg);
+  return shells[shells.length - 1];
+}
+
+// Temperatura ambiente de referencia (20 °C)
+const ROOM_TEMPERATURE = 293.15;
+
+// Estado físico a una temperatura T (K) según los puntos de fusión y ebullición.
+// Sin datos de fusión, el estado solo se conoce a temperatura ambiente.
+function phaseAt(el, T){
+  const base = getNormalizedPhase(el);
+  if(base === "sintetico") return base;
+  if(el.mp === null) return Math.abs(T - ROOM_TEMPERATURE) < 1 ? base : "sintetico";
+  if(el.bp !== null && T >= el.bp) return "gas";
+  if(T >= el.mp) return "liquido";
+  return "solido";
+}

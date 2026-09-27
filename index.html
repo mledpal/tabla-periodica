@@ -126,12 +126,24 @@
         <select id="colorModeSelect" class="custom-select" aria-label="Modo de color de la tabla periódica">
           <option value="cat">Familia Química</option>
           <option value="block">Bloque Orbital (s, p, d, f)</option>
-          <option value="phase">Estado Físico (20 °C)</option>
+          <option value="phase">Estado Físico (según temperatura)</option>
           <option value="electroneg">Mapa: Electronegatividad</option>
           <option value="density">Mapa: Densidad</option>
+          <option value="mass">Mapa: Masa Atómica</option>
+          <option value="melting">Mapa: Punto de Fusión</option>
+          <option value="boiling">Mapa: Punto de Ebullición</option>
           <option value="year">Mapa: Año de Descubrimiento</option>
         </select>
       </div>
+
+      <button type="button" id="quizToggleBtn" class="quiz-btn" aria-pressed="false" title="Pon a prueba tu memoria de la tabla">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        Quiz
+      </button>
 
       <button type="button" id="themeToggleBtn" class="icon-btn theme-toggle" aria-label="Cambiar tema">
         <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -171,6 +183,23 @@
       </div>
     </div>
 
+    <!-- Temperature slider: recalcula el estado físico de cada elemento -->
+    <div class="filter-group temperature-group">
+      <label for="temperatureSlider" class="filter-group-label">Temperatura:</label>
+      <input type="range" id="temperatureSlider" min="0" max="6000" step="1" value="293" aria-describedby="temperatureValue">
+      <output id="temperatureValue" class="temperature-value" for="temperatureSlider">293 K · 20 °C</output>
+      <button type="button" id="temperatureResetBtn" class="mini-btn" title="Volver a temperatura ambiente (20 °C)" hidden>20 °C</button>
+    </div>
+
+    <!-- Table / list view -->
+    <div class="filter-group">
+      <span class="filter-group-label">Vista:</span>
+      <div class="filter-buttons" id="viewToggleGroup">
+        <button type="button" class="filter-chip active" data-view="table" aria-pressed="true">Tabla</button>
+        <button type="button" class="filter-chip" data-view="list" aria-pressed="false">Lista</button>
+      </div>
+    </div>
+
     <!-- Active Elements Counter and Reset -->
     <div class="filter-status">
       <span id="elementsCountBadge" class="elements-counter" aria-live="polite">118 / 118 elementos</span>
@@ -183,6 +212,23 @@
       </button>
     </div>
   </nav>
+
+  <!-- Quiz bar -->
+  <section class="quiz-bar" id="quizBar" aria-label="Quiz de la tabla periódica" hidden>
+    <div class="quiz-question" aria-live="polite">
+      <span class="quiz-label">Encuentra</span>
+      <strong id="quizPrompt">—</strong>
+    </div>
+    <div class="quiz-score">
+      <span>Aciertos <strong id="quizCorrect">0</strong> / <strong id="quizTotal">0</strong></span>
+      <span>Racha <strong id="quizStreak">0</strong></span>
+    </div>
+    <div class="quiz-actions">
+      <button type="button" id="quizSkipBtn" class="mini-btn">Saltar</button>
+      <button type="button" id="quizExitBtn" class="mini-btn">Salir</button>
+    </div>
+    <p class="quiz-hint">Las preguntas salen de los elementos visibles: usa los filtros para practicar una familia concreta.</p>
+  </section>
 
   <!-- Chemical Category Legend -->
   <div class="legend" id="legend" role="group" aria-label="Leyenda de familias químicas (pulsa para filtrar)"></div>
@@ -280,6 +326,12 @@
                 <span class="phase-tag" id="phaseTag">Gas</span>
               </div>
             </div>
+            <button type="button" id="compareElementBtn" class="share-btn compare-btn" aria-pressed="false" title="Añadir a la comparación" aria-label="Añadir a la comparación">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="4" width="7" height="16" rx="1.5"></rect>
+                <rect x="14" y="4" width="7" height="16" rx="1.5"></rect>
+              </svg>
+            </button>
             <button type="button" id="shareElementBtn" class="share-btn" title="Copiar enlace directo al elemento" aria-label="Copiar enlace directo al elemento">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -332,6 +384,14 @@
               </div>
             </div>
             <div class="data-item">
+              <span class="data-label">Estados de Oxidación</span>
+              <span class="data-value mono-value" id="dataOxidation">-</span>
+            </div>
+            <div class="data-item">
+              <span class="data-label">Electrones de Valencia</span>
+              <span class="data-value" id="dataValence">-</span>
+            </div>
+            <div class="data-item">
               <span class="data-label">Punto de Fusión</span>
               <span class="data-value" id="dataMelting">-</span>
             </div>
@@ -353,11 +413,37 @@
           <div class="summary-section">
             <h3 class="summary-title">Descripción y Aplicaciones</h3>
             <p class="element-summary" id="elementSummary">...</p>
+            <a class="wiki-link" id="wikiLink" href="https://es.wikipedia.org/" target="_blank" rel="noopener">
+              Leer más en Wikipedia
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
           </div>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Compare tray (elementos elegidos para comparar) -->
+  <div class="compare-tray" id="compareTray" hidden>
+    <span class="compare-tray-label">Comparar:</span>
+    <div class="compare-chips" id="compareChips"></div>
+    <button type="button" id="compareOpenBtn" class="mini-btn primary">Ver comparación</button>
+    <button type="button" id="compareClearBtn" class="mini-btn" aria-label="Vaciar comparación">Vaciar</button>
+  </div>
+
+  <!-- Compare dialog -->
+  <dialog class="compare-dialog" id="compareDialog" aria-labelledby="compareTitle">
+    <div class="compare-header">
+      <h2 id="compareTitle">Comparación de elementos</h2>
+      <button type="button" class="modal-close" id="compareCloseBtn" aria-label="Cerrar comparación">&times;</button>
+    </div>
+    <div class="compare-table-wrap" id="compareTableWrap"></div>
+    <p class="compare-note">▲ valor más alto · ▼ valor más bajo de la selección</p>
+  </dialog>
 
   <!-- Toast Notification -->
   <div class="toast-notification" id="toastNotification" aria-live="polite"></div>

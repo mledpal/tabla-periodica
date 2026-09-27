@@ -17,6 +17,27 @@
   const heatmapGradientTrack = document.getElementById("heatmapGradientTrack");
   const quickTooltip = document.getElementById("quickTooltip");
   const themeToggleBtn = document.getElementById("themeToggleBtn");
+  const temperatureSlider = document.getElementById("temperatureSlider");
+  const temperatureValue = document.getElementById("temperatureValue");
+  const temperatureResetBtn = document.getElementById("temperatureResetBtn");
+  const viewToggleGroup = document.getElementById("viewToggleGroup");
+  const tableContainer = document.querySelector(".table-container");
+
+  // Quiz
+  const quizToggleBtn = document.getElementById("quizToggleBtn");
+  const quizBar = document.getElementById("quizBar");
+  const quizPrompt = document.getElementById("quizPrompt");
+  const quizCorrect = document.getElementById("quizCorrect");
+  const quizTotal = document.getElementById("quizTotal");
+  const quizStreak = document.getElementById("quizStreak");
+
+  // Comparador
+  const compareElementBtn = document.getElementById("compareElementBtn");
+  const compareTray = document.getElementById("compareTray");
+  const compareChips = document.getElementById("compareChips");
+  const compareOpenBtn = document.getElementById("compareOpenBtn");
+  const compareDialog = document.getElementById("compareDialog");
+  const compareTableWrap = document.getElementById("compareTableWrap");
 
   // Modal DOM Elements
   const modalOverlay = document.getElementById("modalOverlay");
@@ -40,7 +61,13 @@
   let currentColorMode = "cat";
   let isSpinning = true;
   let viewerFailed = false;
+  let modalPushedHistory = false; // true si el modal añadió su propia entrada al historial
   let previewPanel = null;
+  let temperatureK = 293;
+  let viewMode = "table";
+  let compareSet = [];
+  const MAX_COMPARE = 3;
+  const quiz = { active: false, target: null, misses: 0, correct: 0, total: 0, streak: 0, busy: false };
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const BLOCK_LABELS = { s: "Bloque s", p: "Bloque p", d: "Bloque d", f: "Bloque f" };
@@ -62,7 +89,17 @@
   }
 
   function phaseOf(el){
-    return getNormalizedPhase(el);
+    return phaseAt(el, temperatureK);
+  }
+
+  // Estado a la temperatura elegida; a temperatura ambiente se usa el texto original de los datos
+  function phaseLabel(el){
+    if(Math.abs(temperatureK - ROOM_TEMPERATURE) < 1) return el.phase;
+    return `${PHASE_LABELS[phaseOf(el)]} a ${temperatureK} K`;
+  }
+
+  function celsius(k){
+    return Math.round((k - 273.15) * 10) / 10;
   }
 
   // ================= MODOS DE COLOR =================
@@ -117,6 +154,27 @@
       log: true,
       format: v => `${v} g/cm³`,
       stops: [[0.0, [15, 23, 42]], [0.3, [2, 132, 199]], [0.6, [139, 92, 246]], [0.85, [236, 72, 153]], [1.0, [251, 191, 36]]]
+    },
+    mass: {
+      type: "heat",
+      label: "Masa atómica",
+      value: el => el.w,
+      format: v => `${v} u`,
+      stops: [[0.0, [14, 116, 144]], [0.35, [34, 197, 94]], [0.65, [234, 179, 8]], [1.0, [220, 38, 38]]]
+    },
+    melting: {
+      type: "heat",
+      label: "Punto de fusión",
+      value: el => el.mp,
+      format: v => `${v} K (${celsius(v)} °C)`,
+      stops: [[0.0, [30, 64, 175]], [0.3, [6, 182, 212]], [0.55, [250, 204, 21]], [0.8, [249, 115, 22]], [1.0, [220, 38, 38]]]
+    },
+    boiling: {
+      type: "heat",
+      label: "Punto de ebullición",
+      value: el => el.bp,
+      format: v => `${v} K (${celsius(v)} °C)`,
+      stops: [[0.0, [30, 64, 175]], [0.3, [6, 182, 212]], [0.55, [250, 204, 21]], [0.8, [249, 115, 22]], [1.0, [220, 38, 38]]]
     },
     year: {
       type: "heat",
@@ -216,7 +274,7 @@
       `;
 
       // Events
-      cell.addEventListener("click", () => openModal(el.n));
+      cell.addEventListener("click", () => quiz.active ? answerQuiz(el, cell) : openModal(el.n));
       cell.addEventListener("mouseenter", (e) => { showPreview(el); showQuickTooltip(e, el); });
       cell.addEventListener("mouseleave", hideQuickTooltip);
       cell.addEventListener("focus", (e) => { setRovingCell(cell); showPreview(el); showQuickTooltip(e, el); });
@@ -249,7 +307,7 @@
 
   // ================= PANEL DE VISTA PREVIA =================
   function showPreview(el){
-    if(!previewPanel) return;
+    if(!previewPanel || quiz.active) return;
     if(!el){
       previewPanel.innerHTML = `
         <div class="pv-empty">
@@ -276,7 +334,7 @@
       </div>
       <div class="pv-info">
         <div class="pv-name">${escapeHtml(el.name)}</div>
-        <div class="pv-tags">${escapeHtml(CATEGORY_LABELS[el.cat])} · Bloque ${getBlock(el)} · ${escapeHtml(el.phase)}</div>
+        <div class="pv-tags">${escapeHtml(CATEGORY_LABELS[el.cat])} · Bloque ${getBlock(el)} · ${escapeHtml(phaseLabel(el))}</div>
         <div class="pv-config">${configHtml(el.cfg)}</div>
         ${metric}
       </div>`;
@@ -312,7 +370,13 @@
     const el = ELEMENTS_BY_NUMBER[parseInt(cell.dataset.number, 10)];
     const moves = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowDown: [1, 0], ArrowUp: [-1, 0] };
     let target = null;
-    if(moves[e.key]) target = neighbourOf(el, ...moves[e.key]);
+    if(viewMode === "list" && moves[e.key]){
+      // En la lista los elementos van en orden: izquierda/derecha = ±1, arriba/abajo = ± una fila de la rejilla
+      const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+      const [dRow, dCol] = moves[e.key];
+      target = ELEMENTS_BY_NUMBER[el.n + dCol + dRow * columns] || null;
+    }
+    else if(moves[e.key]) target = neighbourOf(el, ...moves[e.key]);
     else if(e.key === "Home") target = ELEMENTS.filter(x => x.row === el.row).sort((a, b) => a.col - b.col)[0];
     else if(e.key === "End") target = ELEMENTS.filter(x => x.row === el.row).sort((a, b) => b.col - a.col)[0];
     else return;
@@ -323,7 +387,7 @@
   // ================= TOOLTIP =================
   // Solo se usa cuando el panel de vista previa no está visible (pantallas estrechas)
   function showQuickTooltip(e, el){
-    if(previewPanel && previewPanel.offsetParent !== null) return;
+    if(quiz.active || (previewPanel && previewPanel.offsetParent !== null)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     quickTooltip.innerHTML = `
       <div class="tooltip-header">
@@ -403,8 +467,8 @@
     } else {
       const range = heatRange(mode);
       heatmapScaleBar.style.display = "flex";
-      heatmapMinVal.textContent = `${mode.format(range.min.v, range.min.el)} (${range.min.el.s})`;
-      heatmapMaxVal.textContent = `${mode.format(range.max.v, range.max.el)} (${range.max.el.s})`;
+      heatmapMinVal.textContent = `${range.min.el.s} · ${mode.format(range.min.v, range.min.el)}`;
+      heatmapMaxVal.textContent = `${range.max.el.s} · ${mode.format(range.max.v, range.max.el)}`;
       heatmapGradientTrack.style.background = `linear-gradient(90deg, ${mode.stops.map(([pos, c]) => `rgb(${c.join(",")}) ${pos * 100}%`).join(", ")})`;
 
       cells.forEach(cell => {
@@ -527,7 +591,10 @@
     // Properties
     document.getElementById("dataMass").textContent = `${formatWeight(el)} u (isótopo ref.: ${el.m})`;
     document.getElementById("dataPeriodGroup").textContent = `Periodo ${periodOf(el)} · Grupo ${groupOf(el)}`;
-    document.getElementById("dataPhase").textContent = el.phase;
+    const phaseNow = phaseOf(el);
+    document.getElementById("dataPhase").textContent = Math.abs(temperatureK - ROOM_TEMPERATURE) < 1 || getNormalizedPhase(el) === "sintetico"
+      ? `${el.phase} (20 °C)`
+      : `${el.phase} (20 °C) · ${PHASE_LABELS[phaseNow]} a ${temperatureK} K`;
     document.getElementById("dataDensity").textContent = el.den !== null ? `${el.den} g/cm³` : "Desconocida";
 
     // Electronegativity with visual Pauling gauge
@@ -548,6 +615,12 @@
     configEl.innerHTML = configHtml(el.cfg);
     configEl.title = el.cfg;
     document.getElementById("dataYear").textContent = isNaN(parseInt(el.year, 10)) ? el.year : `Año ${el.year}`;
+    document.getElementById("dataOxidation").textContent = OXIDATION_STATES[el.n] || "Sin datos";
+    const outer = getShellOccupancy(el.cfg);
+    document.getElementById("dataValence").textContent = `${outer[outer.length - 1]} (capa ${SHELL_LETTERS[outer.length - 1]})`;
+    document.getElementById("wikiLink").href = wikipediaUrl(el);
+    document.getElementById("wikiLink").setAttribute("aria-label", `Leer más sobre ${el.name} en Wikipedia (se abre en una pestaña nueva)`);
+    updateCompareButton();
     document.getElementById("elementSummary").textContent = el.desc;
 
     // Bohr Shells breakdown (mismos colores que las órbitas del visor 3D)
@@ -575,10 +648,11 @@
 
     // Deep linking: la primera apertura crea una entrada de historial (el botón Atrás cierra el modal);
     // navegar entre elementos dentro del modal solo reemplaza la URL.
+    if(!wasOpen) modalPushedHistory = updateHistory;
     if(updateHistory){
       const url = `#${el.s}`;
-      if(wasOpen) history.replaceState({ element: el.s, modal: true }, "", url);
-      else history.pushState({ element: el.s, modal: true }, "", url);
+      if(wasOpen) history.replaceState(history.state, "", url);
+      else history.pushState({ element: el.s }, "", url);
     }
   }
 
@@ -669,8 +743,9 @@
     if(atomViewer) atomViewer.stop();
     if(!updateHistory) return;
     // Si abrimos nosotros la entrada de historial, volver atrás; si se llegó con un enlace directo, limpiar el hash
-    if(history.state && history.state.modal) history.back();
+    if(modalPushedHistory) history.back();
     else history.replaceState(null, "", window.location.pathname + window.location.search);
+    modalPushedHistory = false;
   }
 
   // ================= TEMA CLARO / OSCURO =================
@@ -697,6 +772,234 @@
     const next = effectiveTheme() === "dark" ? "light" : "dark";
     try { localStorage.setItem("theme", next); } catch(err){}
     applyTheme(next);
+  });
+
+  // ================= TEMPERATURA =================
+  function setTemperature(k){
+    temperatureK = k;
+    temperatureSlider.value = k;
+    temperatureValue.textContent = `${k} K · ${Math.round(k - 273.15)} °C`;
+    temperatureResetBtn.hidden = k === 293;
+  }
+
+  temperatureSlider.addEventListener("input", () => {
+    setTemperature(parseInt(temperatureSlider.value, 10));
+    // Mover la temperatura solo tiene efecto visible en el modo de estado físico
+    if(colorModeSelect.value !== "phase") colorModeSelect.value = "phase";
+    applyColorMode();
+  });
+
+  temperatureResetBtn.addEventListener("click", () => {
+    setTemperature(293);
+    applyColorMode();
+  });
+
+  // ================= VISTA TABLA / LISTA =================
+  function setViewMode(mode, persist = true){
+    viewMode = mode;
+    grid.classList.toggle("list-view", mode === "list");
+    tableContainer.classList.toggle("list-mode", mode === "list");
+    setActiveChip(viewToggleGroup, viewToggleGroup.querySelector(`[data-view="${mode}"]`));
+    if(persist){
+      try { localStorage.setItem("view", mode); } catch(err){}
+    }
+  }
+
+  viewToggleGroup.addEventListener("click", (e) => {
+    const chip = e.target.closest(".filter-chip");
+    if(chip) setViewMode(chip.dataset.view);
+  });
+
+  function initialViewMode(){
+    let stored = null;
+    try { stored = localStorage.getItem("view"); } catch(err){}
+    if(stored === "table" || stored === "list") return stored;
+    return window.innerWidth < 680 ? "list" : "table";
+  }
+
+  // ================= QUIZ =================
+  function startQuiz(){
+    quiz.active = true;
+    quiz.correct = quiz.total = quiz.streak = 0;
+    quiz.target = null;
+    document.body.classList.add("quiz-mode");
+    quizBar.hidden = false;
+    quizToggleBtn.setAttribute("aria-pressed", "true");
+    hideQuickTooltip();
+    updateQuizScore();
+    nextQuestion();
+  }
+
+  function stopQuiz(){
+    quiz.active = false;
+    quiz.target = null;
+    document.body.classList.remove("quiz-mode");
+    quizBar.hidden = true;
+    quizToggleBtn.setAttribute("aria-pressed", "false");
+    grid.querySelectorAll(".quiz-reveal").forEach(c => c.classList.remove("quiz-reveal"));
+    showPreview(null);
+  }
+
+  function nextQuestion(){
+    if(!quiz.active) return;
+    grid.querySelectorAll(".quiz-reveal").forEach(c => c.classList.remove("quiz-reveal"));
+    // Las preguntas salen de los elementos visibles, así los filtros sirven para practicar una familia
+    let pool = [...grid.querySelectorAll(".element-cell:not(.dimmed)")].map(c => ELEMENTS_BY_NUMBER[parseInt(c.dataset.number, 10)]);
+    if(pool.length === 0) pool = ELEMENTS.slice();
+    if(pool.length > 1 && quiz.target) pool = pool.filter(el => el !== quiz.target);
+    quiz.target = pool[Math.floor(Math.random() * pool.length)];
+    quiz.misses = 0;
+    quiz.busy = false;
+    quizPrompt.textContent = Math.random() < 0.7
+      ? quiz.target.name
+      : `el elemento número ${quiz.target.n}`;
+  }
+
+  function updateQuizScore(){
+    quizCorrect.textContent = quiz.correct;
+    quizTotal.textContent = quiz.total;
+    quizStreak.textContent = quiz.streak;
+  }
+
+  function flash(cell, cls){
+    cell.classList.remove(cls);
+    void cell.offsetWidth; // reinicia la animación
+    cell.classList.add(cls);
+    setTimeout(() => cell.classList.remove(cls), 700);
+  }
+
+  function answerQuiz(el, cell){
+    if(quiz.busy || !quiz.target) return;
+    if(el === quiz.target){
+      quiz.busy = true;
+      quiz.total++;
+      if(quiz.misses === 0){ quiz.correct++; quiz.streak++; }
+      else quiz.streak = 0;
+      flash(cell, "quiz-correct");
+      showToast(quiz.misses === 0 ? `¡Correcto! ${el.name} (${el.s})` : `${el.name} (${el.s})`);
+      updateQuizScore();
+      setTimeout(nextQuestion, 650);
+    } else {
+      quiz.misses++;
+      quiz.streak = 0;
+      flash(cell, "quiz-wrong");
+      showToast(`No, eso es ${el.name} (${el.s})`);
+      // Tras dos fallos se señala la respuesta
+      if(quiz.misses >= 2) cellFor(quiz.target.n).classList.add("quiz-reveal");
+      updateQuizScore();
+    }
+  }
+
+  quizToggleBtn.addEventListener("click", () => quiz.active ? stopQuiz() : startQuiz());
+  document.getElementById("quizExitBtn").addEventListener("click", stopQuiz);
+  document.getElementById("quizSkipBtn").addEventListener("click", () => {
+    if(quiz.busy || !quiz.target) return;
+    quiz.busy = true;
+    quiz.total++;
+    quiz.streak = 0;
+    updateQuizScore();
+    cellFor(quiz.target.n).classList.add("quiz-reveal");
+    showToast(`Era ${quiz.target.name} (${quiz.target.s})`);
+    setTimeout(nextQuestion, 1200);
+  });
+
+  // ================= COMPARADOR =================
+  function toggleCompare(number){
+    const idx = compareSet.indexOf(number);
+    if(idx >= 0){
+      compareSet.splice(idx, 1);
+    } else {
+      if(compareSet.length >= MAX_COMPARE){
+        const removed = ELEMENTS_BY_NUMBER[compareSet.shift()];
+        showToast(`Máximo ${MAX_COMPARE} elementos: se quita ${removed.name}`);
+      }
+      compareSet.push(number);
+    }
+    renderCompareTray();
+    updateCompareButton();
+  }
+
+  function updateCompareButton(){
+    const inSet = compareSet.includes(currentNumber);
+    compareElementBtn.classList.toggle("active", inSet);
+    compareElementBtn.setAttribute("aria-pressed", String(inSet));
+    const label = inSet ? "Quitar de la comparación" : "Añadir a la comparación";
+    compareElementBtn.title = label;
+    compareElementBtn.setAttribute("aria-label", label);
+  }
+
+  function renderCompareTray(){
+    compareTray.hidden = compareSet.length === 0;
+    compareOpenBtn.disabled = compareSet.length < 2;
+    compareOpenBtn.title = compareSet.length < 2 ? "Añade al menos dos elementos" : "";
+    compareChips.innerHTML = "";
+    compareSet.forEach(n => {
+      const el = ELEMENTS_BY_NUMBER[n];
+      const chip = document.createElement("span");
+      chip.className = `compare-chip cat-${el.cat}`;
+      chip.innerHTML = `<strong>${el.s}</strong><button type="button" aria-label="Quitar ${escapeHtml(el.name)} de la comparación">&times;</button>`;
+      chip.querySelector("button").addEventListener("click", () => toggleCompare(n));
+      compareChips.appendChild(chip);
+    });
+  }
+
+  const COMPARE_ROWS = [
+    { label: "Número atómico", num: el => el.n },
+    { label: "Masa atómica (u)", num: el => el.w },
+    { label: "Familia", text: el => CATEGORY_LABELS[el.cat] },
+    { label: "Bloque · Periodo · Grupo", text: el => `${getBlock(el)} · ${periodOf(el)} · ${groupOf(el)}` },
+    { label: "Estado (20 °C)", text: el => el.phase },
+    { label: "Densidad (g/cm³)", num: el => el.den },
+    { label: "Electronegatividad", num: el => el.en },
+    { label: "Punto de fusión (K)", num: el => el.mp },
+    { label: "Punto de ebullición (K)", num: el => el.bp },
+    { label: "Electrones de valencia", num: el => outerShellElectrons(el) },
+    { label: "Estados de oxidación", text: el => OXIDATION_STATES[el.n] || "Sin datos" },
+    { label: "Configuración", html: el => configHtml(el.cfg) },
+    { label: "Descubrimiento", text: el => el.year }
+  ];
+
+  function openCompare(){
+    const els = compareSet.map(n => ELEMENTS_BY_NUMBER[n]);
+    let html = `<table class="compare-table"><thead><tr><th scope="col"><span class="sr-only">Propiedad</span></th>`;
+    els.forEach(el => {
+      html += `<th scope="col"><span class="compare-tile cat-${el.cat}"><span>${el.n}</span><strong>${el.s}</strong></span>${escapeHtml(el.name)}</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+    COMPARE_ROWS.forEach(row => {
+      html += `<tr><th scope="row">${row.label}</th>`;
+      if(row.num){
+        const vals = els.map(row.num);
+        const known = vals.filter(v => v !== null && v !== undefined);
+        const max = Math.max(...known), min = Math.min(...known);
+        const marks = known.length >= 2 && max !== min;
+        vals.forEach(v => {
+          if(v === null || v === undefined){ html += `<td class="muted">Sin datos</td>`; return; }
+          const mark = marks && v === max ? ` <span class="cmp-max" title="Valor más alto">▲</span>`
+                     : marks && v === min ? ` <span class="cmp-min" title="Valor más bajo">▼</span>` : "";
+          html += `<td class="num">${v}${mark}</td>`;
+        });
+      } else {
+        els.forEach(el => { html += `<td>${row.html ? row.html(el) : escapeHtml(row.text(el))}</td>`; });
+      }
+      html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+    compareTableWrap.innerHTML = html;
+    compareDialog.showModal();
+  }
+
+  compareElementBtn.addEventListener("click", () => {
+    if(currentNumber) toggleCompare(currentNumber);
+  });
+  compareOpenBtn.addEventListener("click", openCompare);
+  document.getElementById("compareClearBtn").addEventListener("click", () => {
+    compareSet = [];
+    renderCompareTray();
+  });
+  document.getElementById("compareCloseBtn").addEventListener("click", () => compareDialog.close());
+  compareDialog.addEventListener("click", (e) => {
+    if(e.target === compareDialog) compareDialog.close(); // clic en el fondo
   });
 
   // ================= TOAST NOTIFICATION =================
@@ -795,6 +1098,8 @@
 
   // Keyboard Navigation & Shortcuts
   document.addEventListener("keydown", (e) => {
+    if(compareDialog.open) return; // el diálogo nativo gestiona su propio teclado
+
     // Quick search shortcut "/"
     if(e.key === "/" && document.activeElement !== searchInput && !modalOverlay.classList.contains("active")){
       e.preventDefault();
@@ -857,8 +1162,10 @@
 
   // Initialize
   applyTheme(readStoredTheme());
+  setTemperature(293);
   buildHeaders();
   buildGrid();
+  setViewMode(initialViewMode(), false);
   checkUrlHash();
 
 })();
