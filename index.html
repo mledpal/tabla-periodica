@@ -16,7 +16,7 @@
 
   <!-- Favicon & PWA Manifest -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="apple-touch-icon" href="favicon.svg">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
 
   <!-- Open Graph / Facebook / WhatsApp / LinkedIn -->
@@ -24,16 +24,19 @@
   <meta property="og:url" content="https://mledpal.github.io/tabla-periodica/">
   <meta property="og:title" content="Tabla Periódica 3D Interactiva · Modelos Atómicos y Elementos Químicos">
   <meta property="og:description" content="Explora los 118 elementos químicos en 3D interactivo con órbitas electrónicas en tiempo real, configuraciones cuánticas y propiedades físico-químicas completas.">
-  <meta property="og:image" content="https://mledpal.github.io/tabla-periodica/favicon.svg">
+  <meta property="og:image" content="https://mledpal.github.io/tabla-periodica/img/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Tabla periódica de colores con el logotipo de un átomo y el título Tabla Periódica 3D">
   <meta property="og:locale" content="es_ES">
   <meta property="og:site_name" content="Tabla Periódica 3D">
 
   <!-- Twitter Cards -->
-  <meta name="twitter:card" content="summary">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:url" content="https://mledpal.github.io/tabla-periodica/">
   <meta name="twitter:title" content="Tabla Periódica 3D Interactiva · Modelos Atómicos">
   <meta name="twitter:description" content="Visualiza los 118 elementos químicos con modelos atómicos en 3D interactivos, electrones en tiempo real y fichas completas.">
-  <meta name="twitter:image" content="https://mledpal.github.io/tabla-periodica/favicon.svg">
+  <meta name="twitter:image" content="https://mledpal.github.io/tabla-periodica/img/og-image.png">
 
   <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,7 +64,7 @@
     "description": "Aplicación web interactiva educativa para explorar los 118 elementos de la tabla periódica con modelos atómicos en 3D interactivos (Three.js), configuraciones electrónicas y datos físico-químicos completos.",
     "applicationCategory": "EducationalApplication",
     "operatingSystem": "All",
-    "browserRequirements": "Requires WebGL support",
+    "browserRequirements": "Requires WebGL support for the 3D atom viewer",
     "inLanguage": "es",
     "isAccessibleForFree": true,
     "keywords": "tabla periódica, elementos químicos, química 3d, átomo 3d, electrones, física cuántica",
@@ -455,9 +458,16 @@
   </section>
 
   <!-- External Libraries & Scripts -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Three.js (módulo ES): main.js importa js/atom3d.js solo cuando se abre el primer elemento -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
   <script src="js/data.js"></script>
-  <script src="js/atom3d.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

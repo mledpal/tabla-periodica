@@ -2,18 +2,40 @@
   "name": "Tabla Periódica 3D Interactiva",
   "short_name": "Tabla 3D",
   "description": "Explora los 118 elementos químicos con modelos atómicos en 3D interactivos, configuraciones electrónicas y propiedades detalladas.",
-  "start_url": "./index.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#080b12",
   "theme_color": "#0b0f19",
   "lang": "es",
-  "categories": ["education", "science", "productivity", "utilities"],
+  "categories": [
+    "education",
+    "science"
+  ],
   "icons": [
     {
       "src": "favicon.svg",
-      "sizes": "512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "scope": "./"
 }

@@ -68,7 +68,6 @@
   let compareSet = [];
   const MAX_COMPARE = 3;
   const quiz = { active: false, target: null, misses: 0, correct: 0, total: 0, streak: 0, busy: false };
-  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const BLOCK_LABELS = { s: "Bloque s", p: "Bloque p", d: "Bloque d", f: "Bloque f" };
   const PHASE_LABELS = { solido: "Sólido", liquido: "Líquido", gas: "Gas", sintetico: "Sintético / desconocido" };
@@ -656,31 +655,54 @@
     }
   }
 
-  // Visor 3D con respaldo 2D si Three.js o WebGL no están disponibles
-  function renderAtom(el, shells){
-    const container = document.getElementById("atomCanvasContainer");
-    if(atomViewer === null && !viewerFailed){
-      try {
-        if(typeof THREE === "undefined") throw new Error("Three.js no cargado");
+  // Visor 3D: Three.js se carga como módulo ES la primera vez que se abre un elemento.
+  // Si el módulo no carga (sin conexión, sin WebGL, abierto como file://) se usa un diagrama 2D.
+  let viewerPromise = null;
+
+  function loadViewer(container){
+    if(!viewerPromise){
+      container.innerHTML = `<div class="viewer-loading">Cargando modelo 3D…</div>`;
+      viewerPromise = import("./atom3d.js").then(({ AtomViewer }) => {
+        container.innerHTML = "";
         atomViewer = new AtomViewer(container);
+        syncSpinButton();
+        return atomViewer;
+      });
+    }
+    return viewerPromise;
+  }
+
+  async function renderAtom(el, shells){
+    const container = document.getElementById("atomCanvasContainer");
+    if(!viewerFailed){
+      try {
+        const viewer = await loadViewer(container);
+        // Mientras cargaba, el usuario pudo cerrar el modal o pasar a otro elemento
+        if(currentNumber !== el.n || !modalOverlay.classList.contains("active")) return;
+        viewer.start();
+        requestAnimationFrame(() => {
+          viewer.onResize();
+          viewer.render(el, shells);
+        });
+        return;
       } catch(err){
         viewerFailed = true;
+        atomViewer = null;
         console.warn("Visor 3D no disponible, usando diagrama 2D:", err);
         document.querySelector(".viewer-controls-overlay").style.display = "none";
         document.querySelector(".viewer-hint").textContent = "Vista 2D · el modelo 3D no está disponible en este navegador";
       }
     }
+    if(currentNumber === el.n) container.innerHTML = buildBohrSvg(el, shells);
+  }
 
-    if(atomViewer){
-      if(prefersReducedMotion && isSpinning) toggleSpinBtn.click(); // sin giro automático con movimiento reducido
-      atomViewer.start();
-      requestAnimationFrame(() => {
-        atomViewer.onResize();
-        atomViewer.render(el, shells);
-      });
-    } else {
-      container.innerHTML = buildBohrSvg(el, shells);
-    }
+  function syncSpinButton(){
+    isSpinning = !!(atomViewer && atomViewer.controls.autoRotate);
+    toggleSpinBtn.innerHTML = isSpinning
+      ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>`;
+    toggleSpinBtn.title = isSpinning ? "Pausar giro automático" : "Reanudar giro automático";
+    toggleSpinBtn.setAttribute("aria-label", toggleSpinBtn.title);
   }
 
   // Diagrama de Bohr estático en SVG (respaldo sin WebGL)
@@ -1062,12 +1084,8 @@
   // 3D Controls Overlay Buttons
   toggleSpinBtn.addEventListener("click", () => {
     if(atomViewer){
-      isSpinning = atomViewer.toggleAutoRotate();
-      toggleSpinBtn.innerHTML = isSpinning
-        ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
-        : `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
-      toggleSpinBtn.title = isSpinning ? "Pausar giro automático" : "Reanudar giro automático";
-      toggleSpinBtn.setAttribute("aria-label", toggleSpinBtn.title);
+      atomViewer.toggleAutoRotate();
+      syncSpinButton();
     }
   });
   resetViewBtn.addEventListener("click", () => {
@@ -1159,6 +1177,13 @@
   }
 
   window.addEventListener("popstate", checkUrlHash);
+
+  // Service worker para uso sin conexión (solo por http/https, no desde file://)
+  if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(err => console.warn("Service worker no registrado:", err));
+    });
+  }
 
   // Initialize
   applyTheme(readStoredTheme());
