@@ -25,7 +25,38 @@ class AtomViewer {
 
     this._clock = new THREE.Clock();
     this._animate = this._animate.bind(this);
+    this._animId = null;
+    this._running = false;
+
+    // No dibujar mientras la pestaña está oculta
+    this._onVisibility = () => {
+      if(document.hidden) this._pauseLoop();
+      else if(this._running) this._resumeLoop();
+    };
+    document.addEventListener("visibilitychange", this._onVisibility);
+  }
+
+  // Arranca el bucle de animación (al abrir el modal)
+  start(){
+    this._running = true;
+    this._resumeLoop();
+  }
+
+  // Detiene el bucle por completo (al cerrar el modal)
+  stop(){
+    this._running = false;
+    this._pauseLoop();
+  }
+
+  _resumeLoop(){
+    if(this._animId !== null || document.hidden) return;
+    this._clock.getDelta(); // descartar el tiempo transcurrido en pausa
     this._animId = requestAnimationFrame(this._animate);
+  }
+
+  _pauseLoop(){
+    if(this._animId !== null) cancelAnimationFrame(this._animId);
+    this._animId = null;
   }
 
   _setupLights(){
@@ -145,15 +176,16 @@ class AtomViewer {
   }
 
   clear(){
-    while(this.group.children.length){
-      const obj = this.group.children.pop();
-      if(obj.geometry) obj.geometry.dispose();
-      if(obj.material) {
-        if(Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
-      }
-      this.group.remove(obj);
-    }
+    // Recorre también los grupos anidados (órbitas) para liberar toda la memoria de GPU
+    const geometries = new Set();
+    const materials = new Set();
+    this.group.traverse(obj => {
+      if(obj.geometry) geometries.add(obj.geometry);
+      if(obj.material) [].concat(obj.material).forEach(m => materials.add(m));
+    });
+    geometries.forEach(g => g.dispose());
+    materials.forEach(m => m.dispose());
+    this.group.clear();
     this.electronOrbits = [];
     this.nucleusParticles = [];
   }
@@ -320,7 +352,8 @@ class AtomViewer {
   }
 
   dispose(){
-    if(this._animId) cancelAnimationFrame(this._animId);
+    this.stop();
+    document.removeEventListener("visibilitychange", this._onVisibility);
     this.clear();
     this._resizeObserver.disconnect();
     this.renderer.dispose();

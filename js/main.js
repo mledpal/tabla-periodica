@@ -37,6 +37,7 @@
   let activeBlockFilter = "all";
   let currentColorMode = "cat";
   let isSpinning = true;
+  let viewerFailed = false;
 
   // ================= BUILD PERIOD & GROUP HEADERS =================
   function buildHeaders(){
@@ -332,8 +333,20 @@
   }
 
   // ================= FILTERS & SEARCH =================
+  // Números: coincidencia exacta con el número atómico (o con un año si tiene 4 cifras).
+  // Texto: símbolo por prefijo, nombre y familia por subcadena, sin distinguir tildes.
+  function matchesQuery(el, query){
+    if(/^\d+$/.test(query)){
+      return String(el.n) === query || (query.length === 4 && String(el.year) === query);
+    }
+    return normalizeText(el.s).startsWith(query) ||
+           normalizeText(el.name).includes(query) ||
+           normalizeText(CATEGORY_LABELS[el.cat]).includes(query) ||
+           normalizeText(el.year).startsWith(query);
+  }
+
   function applyFilters(){
-    const query = searchInput.value.trim().toLowerCase();
+    const query = normalizeText(searchInput.value);
     let visibleCount = 0;
 
     // Toggle clear search button
@@ -354,16 +367,7 @@
       if(activeBlockFilter !== "all" && getBlock(el) !== activeBlockFilter) visible = false;
 
       // Search query
-      if(query){
-        const matchesName = el.name.toLowerCase().includes(query);
-        const matchesSymbol = el.s.toLowerCase() === query || el.s.toLowerCase().startsWith(query);
-        const matchesNum = String(el.n) === query;
-        const matchesCategory = (CATEGORY_LABELS[el.cat] || "").toLowerCase().includes(query);
-        const matchesYear = String(el.year).toLowerCase().includes(query);
-        if(!matchesName && !matchesSymbol && !matchesNum && !matchesCategory && !matchesYear) {
-          visible = false;
-        }
-      }
+      if(query && !matchesQuery(el, query)) visible = false;
 
       cell.classList.toggle("dimmed", !visible);
       if(visible) visibleCount++;
@@ -467,25 +471,64 @@
     document.getElementById("shellInfo").innerHTML = `Capas Bohr (${shells.length}):<br>${shellBadges}`;
 
     // Open Modal Overlay
+    const wasOpen = modalOverlay.classList.contains("active");
     modalOverlay.classList.add("active");
     document.body.style.overflow = "hidden";
 
-    if(!atomViewer){
-      atomViewer = new AtomViewer(document.getElementById("atomCanvasContainer"));
-    }
-
-    // Render atom
-    requestAnimationFrame(() => {
-      atomViewer.onResize();
-      atomViewer.render(el, shells);
-    });
-
+    renderAtom(el, shells);
     updateNavButtons();
 
-    // Deep linking: Update URL hash for sharing / SEO bookmarking
+    // Deep linking: la primera apertura crea una entrada de historial (el botón Atrás cierra el modal);
+    // navegar entre elementos dentro del modal solo reemplaza la URL.
     if(updateHistory){
-      history.replaceState({ element: el.s }, `${el.name} (${el.s}) - Tabla Periódica 3D`, `#${el.s}`);
+      const url = `#${el.s}`;
+      if(wasOpen) history.replaceState({ element: el.s, modal: true }, "", url);
+      else history.pushState({ element: el.s, modal: true }, "", url);
     }
+  }
+
+  // Visor 3D con respaldo 2D si Three.js o WebGL no están disponibles
+  function renderAtom(el, shells){
+    const container = document.getElementById("atomCanvasContainer");
+    if(atomViewer === null && !viewerFailed){
+      try {
+        if(typeof THREE === "undefined") throw new Error("Three.js no cargado");
+        atomViewer = new AtomViewer(container);
+      } catch(err){
+        viewerFailed = true;
+        console.warn("Visor 3D no disponible, usando diagrama 2D:", err);
+        document.querySelector(".viewer-controls-overlay").style.display = "none";
+        document.querySelector(".viewer-hint").textContent = "Vista 2D · el modelo 3D no está disponible en este navegador";
+      }
+    }
+
+    if(atomViewer){
+      atomViewer.start();
+      requestAnimationFrame(() => {
+        atomViewer.onResize();
+        atomViewer.render(el, shells);
+      });
+    } else {
+      container.innerHTML = buildBohrSvg(el, shells);
+    }
+  }
+
+  // Diagrama de Bohr estático en SVG (respaldo sin WebGL)
+  function buildBohrSvg(el, shells){
+    const size = 400, c = size / 2;
+    const step = Math.min(24, 150 / Math.max(1, shells.length));
+    let svg = `<svg class="bohr-2d" viewBox="0 0 ${size} ${size}" role="img" aria-label="Modelo de Bohr de ${el.name}">`;
+    shells.forEach((count, idx) => {
+      const r = 42 + (idx + 1) * step;
+      svg += `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.3"/>`;
+      for(let i = 0; i < count; i++){
+        const a = (i / count) * Math.PI * 2 - Math.PI / 2;
+        svg += `<circle cx="${(c + Math.cos(a) * r).toFixed(1)}" cy="${(c + Math.sin(a) * r).toFixed(1)}" r="4" fill="var(--accent)"/>`;
+      }
+    });
+    svg += `<circle cx="${c}" cy="${c}" r="34" fill="#ff5376" fill-opacity="0.85"/>`;
+    svg += `<text x="${c}" y="${c + 7}" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">${el.s}</text></svg>`;
+    return svg;
   }
 
   function periodOf(el){
@@ -506,13 +549,17 @@
     nextBtn.style.opacity = nextBtn.disabled ? 0.3 : 1;
   }
 
-  function closeModal(){
+  function closeModal(updateHistory = true){
+    if(!modalOverlay.classList.contains("active")) return;
     modalOverlay.classList.remove("active");
     document.body.style.overflow = "";
     currentNumber = null;
     hideQuickTooltip();
-    // Clean URL hash without reloading
-    history.replaceState(null, document.title, window.location.pathname + window.location.search);
+    if(atomViewer) atomViewer.stop();
+    if(!updateHistory) return;
+    // Si abrimos nosotros la entrada de historial, volver atrás; si se llegó con un enlace directo, limpiar el hash
+    if(history.state && history.state.modal) history.back();
+    else history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 
   // ================= TOAST NOTIFICATION =================
@@ -569,7 +616,7 @@
   nextBtn.addEventListener("click", () => {
     if(currentNumber < 118) openModal(currentNumber + 1);
   });
-  closeModalBtn.addEventListener("click", closeModal);
+  closeModalBtn.addEventListener("click", () => closeModal());
   modalOverlay.addEventListener("click", (e) => {
     if(e.target === modalOverlay) closeModal();
   });
@@ -638,8 +685,11 @@
 
   // Deep linking URL Hash routing on page load or back/forward
   function checkUrlHash(){
-    const hash = window.location.hash.replace("#", "").trim().toLowerCase();
-    if(!hash) return;
+    const hash = normalizeText(decodeURIComponent(window.location.hash.replace("#", "")));
+    if(!hash){
+      closeModal(false);
+      return;
+    }
 
     // Check if numeric
     const num = parseInt(hash, 10);
@@ -655,13 +705,13 @@
     }
 
     // Check by element name
-    const foundByName = ELEMENTS.find(e => e.name.toLowerCase() === hash);
+    const foundByName = ELEMENTS.find(e => normalizeText(e.name) === hash);
     if(foundByName){
       openModal(foundByName.n, false);
     }
   }
 
-  window.addEventListener("hashchange", checkUrlHash);
+  window.addEventListener("popstate", checkUrlHash);
 
   // Initialize
   buildHeaders();

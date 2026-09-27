@@ -82,7 +82,7 @@ const ELEMENTS = [
 {n:54,s:"Xe",name:"Xenón",w:131.29,m:132,cat:"noble",row:5,col:18,cfg:cfg(CORE_KR,"4d10 5s2 5p6"),en:2.6,den:0.0058971,mp:161.4,bp:165.05,phase:"Gas",year:"1898",desc:"Usado en faros de xenón y como propulsor en motores iónicos."},
 {n:55,s:"Cs",name:"Cesio",w:132.91,m:133,cat:"alcalino",row:6,col:1,cfg:cfg(CORE_XE,"6s1"),en:0.79,den:1.93,mp:301.59,bp:944,phase:"Sólido",year:"1860",desc:"La base del reloj atómico que define la duración del segundo."},
 {n:56,s:"Ba",name:"Bario",w:137.33,m:138,cat:"alcalinoterreo",row:6,col:2,cfg:cfg(CORE_XE,"6s2"),en:0.89,den:3.51,mp:1000,bp:2170,phase:"Sólido",year:"1808",desc:"El sulfato de bario se usa como contraste en radiografías digestivas."},
-{n:57,s:"La",name:"Lantano",w:138.91,m:139,cat:"lantanido",row:6,col:3,cfg:cfg(CORE_XE,"5d1 6s2"),en:1.10,den:6.145,mp:1193,bp:3737,phase:"Sólido",year:"1839",desc:"Da nombre a toda la serie de los lantánidos o 'tierras raras'."},
+{n:57,s:"La",name:"Lantano",w:138.91,m:139,cat:"lantanido",row:9,col:3,cfg:cfg(CORE_XE,"5d1 6s2"),en:1.10,den:6.145,mp:1193,bp:3737,phase:"Sólido",year:"1839",desc:"Da nombre a toda la serie de los lantánidos o 'tierras raras'."},
 {n:58,s:"Ce",name:"Cerio",w:140.12,m:140,cat:"lantanido",row:9,col:4,cfg:cfg(CORE_XE,"4f1 5d1 6s2"),en:1.12,den:6.77,mp:1068,bp:3716,phase:"Sólido",year:"1803",desc:"El lantánido más abundante; usado en piedras de mechero por su pirofia."},
 {n:59,s:"Pr",name:"Praseodimio",w:140.91,m:141,cat:"lantanido",row:9,col:5,cfg:cfg(CORE_XE,"4f3 6s2"),en:1.13,den:6.77,mp:1208,bp:3403,phase:"Sólido",year:"1885",desc:"Da un color verde-amarillo intenso a los vidrios de soldadura."},
 {n:60,s:"Nd",name:"Neodimio",w:144.24,m:142,cat:"lantanido",row:9,col:6,cfg:cfg(CORE_XE,"4f4 6s2"),en:1.14,den:7.01,mp:1297,bp:3347,phase:"Sólido",year:"1885",desc:"Componente de los imanes permanentes más potentes que existen."},
@@ -114,7 +114,7 @@ const ELEMENTS = [
 {n:86,s:"Rn",name:"Radón",w:222,m:222,cat:"noble",row:6,col:18,cfg:cfg(CORE_XE,"4f14 5d10 6s2 6p6"),en:null,den:0.00973,mp:202,bp:211.5,phase:"Gas",year:"1900",desc:"Gas radiactivo que puede acumularse en sótanos mal ventilados."},
 {n:87,s:"Fr",name:"Francio",w:223,m:223,cat:"alcalino",row:7,col:1,cfg:cfg(CORE_RN,"7s1"),en:0.7,den:null,mp:300,bp:950,phase:"Sólido",year:"1939",desc:"Uno de los elementos naturales más inestables y raros que existen."},
 {n:88,s:"Ra",name:"Radio",w:226,m:226,cat:"alcalinoterreo",row:7,col:2,cfg:cfg(CORE_RN,"7s2"),en:0.9,den:5.5,mp:973,bp:2010,phase:"Sólido",year:"1898",desc:"Brilla en la oscuridad; descubierto también por Marie y Pierre Curie."},
-{n:89,s:"Ac",name:"Actinio",w:227,m:227,cat:"actinido",row:7,col:3,cfg:cfg(CORE_RN,"6d1 7s2"),en:1.1,den:10.07,mp:1500,bp:3500,phase:"Sólido",year:"1899",desc:"Da nombre a toda la serie de los actínidos; brilla en azul pálido."},
+{n:89,s:"Ac",name:"Actinio",w:227,m:227,cat:"actinido",row:10,col:3,cfg:cfg(CORE_RN,"6d1 7s2"),en:1.1,den:10.07,mp:1500,bp:3500,phase:"Sólido",year:"1899",desc:"Da nombre a toda la serie de los actínidos; brilla en azul pálido."},
 {n:90,s:"Th",name:"Torio",w:232.04,m:232,cat:"actinido",row:10,col:4,cfg:cfg(CORE_RN,"6d2 7s2"),en:1.3,den:11.72,mp:2023,bp:5061,phase:"Sólido",year:"1828",desc:"Posible combustible nuclear futuro, más abundante que el uranio."},
 {n:91,s:"Pa",name:"Protactinio",w:231.04,m:231,cat:"actinido",row:10,col:5,cfg:cfg(CORE_RN,"5f2 6d1 7s2"),en:1.5,den:15.37,mp:1841,bp:4300,phase:"Sólido",year:"1913",desc:"Extremadamente raro, tóxico y radiactivo; muy costoso de aislar."},
 {n:92,s:"U",name:"Uranio",w:238.03,m:238,cat:"actinido",row:10,col:6,cfg:cfg(CORE_RN,"5f3 6d1 7s2"),en:1.38,den:19.05,mp:1405.3,bp:4404,phase:"Sólido",year:"1789",desc:"Combustible clave de los reactores nucleares y armamento atómico."},
@@ -200,3 +200,8 @@ function getShellOccupancy(configStr){
   return result;
 }
 
+
+// Normaliza texto para búsquedas: minúsculas y sin tildes ("Oxígeno" -> "oxigeno")
+function normalizeText(str){
+  return String(str || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
