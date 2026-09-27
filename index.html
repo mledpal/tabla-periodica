@@ -42,6 +42,14 @@
 
   <link rel="stylesheet" href="css/style.css">
 
+  <!-- Aplica el tema guardado antes de pintar para evitar un destello -->
+  <script>
+    try {
+      var savedTheme = localStorage.getItem("theme");
+      if(savedTheme === "light" || savedTheme === "dark") document.documentElement.dataset.theme = savedTheme;
+    } catch(e) {}
+  </script>
+
   <!-- Schema.org JSON-LD Structured Data for WebApplication / Science / Education -->
   <script type="application/ld+json">
   {
@@ -108,8 +116,8 @@
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <input type="search" id="searchInput" placeholder="Buscar por nombre, símbolo o Nº atómico (/)..." autocomplete="off" aria-label="Buscar elemento químico">
-        <button id="clearSearchBtn" class="clear-search-btn" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">&times;</button>
+        <input type="search" id="searchInput" placeholder="Nombre, símbolo o número…" autocomplete="off" aria-label="Buscar elemento químico">
+        <button type="button" id="clearSearchBtn" class="clear-search-btn" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">&times;</button>
         <kbd class="search-shortcut" title="Pulsa / para buscar">/</kbd>
       </div>
 
@@ -124,6 +132,16 @@
           <option value="year">Mapa: Año de Descubrimiento</option>
         </select>
       </div>
+
+      <button type="button" id="themeToggleBtn" class="icon-btn theme-toggle" aria-label="Cambiar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -156,7 +174,7 @@
     <!-- Active Elements Counter and Reset -->
     <div class="filter-status">
       <span id="elementsCountBadge" class="elements-counter" aria-live="polite">118 / 118 elementos</span>
-      <button id="resetFiltersBtn" class="reset-btn" title="Restablecer todos los filtros" style="display:none;">
+      <button type="button" id="resetFiltersBtn" class="reset-btn" title="Restablecer todos los filtros" style="display:none;">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
           <path d="M3 3v5h5"></path>
@@ -205,7 +223,7 @@
     <div class="footer-content">
       <p class="footer-tip">
         <span class="tip-badge">Tip</span>
-        Haz clic en cualquier elemento para abrir su <strong>modelo atómico 3D</strong> · Navega con las teclas <kbd>&larr;</kbd> <kbd>&rarr;</kbd> · Cierra con <kbd>Esc</kbd>
+        Haz clic en cualquier elemento para abrir su <strong>modelo atómico 3D</strong> · Muévete con <kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&rarr;</kbd> · Busca con <kbd>/</kbd> · Cierra con <kbd>Esc</kbd>
       </p>
       <div class="footer-links">
         <span class="footer-copy">&copy; Tabla Periódica 3D Interactiva · Diseñado para educación y divulgación científica</span>
@@ -216,30 +234,30 @@
   <!-- Detail 3D Modal Dialog -->
   <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="elementName">
     <div class="modal" id="modal">
-      <button class="modal-close" id="closeModal" aria-label="Cerrar ventana de detalle">&times;</button>
-      <button class="nav-btn nav-prev" id="prevBtn" aria-label="Elemento anterior" title="Elemento anterior (&larr;)">&#10094;</button>
-      <button class="nav-btn nav-next" id="nextBtn" aria-label="Elemento siguiente" title="Elemento siguiente (&rarr;)">&#10095;</button>
+      <button type="button" class="modal-close" id="closeModal" aria-label="Cerrar ventana de detalle">&times;</button>
 
       <div class="modal-content">
         <!-- 3D Atom Viewer Pane -->
         <div class="viewer-pane">
           <div id="atomCanvasContainer" class="atom-canvas-container"></div>
+          <button type="button" class="nav-btn nav-prev" id="prevBtn" aria-label="Elemento anterior">&#10094;</button>
+          <button type="button" class="nav-btn nav-next" id="nextBtn" aria-label="Elemento siguiente">&#10095;</button>
           
           <!-- 3D Interactive Controls Overlay -->
           <div class="viewer-controls-overlay">
-            <button id="toggleSpinBtn" class="viewer-btn" title="Pausar / Reanudar giro automático">
+            <button type="button" id="toggleSpinBtn" class="viewer-btn" title="Pausar / Reanudar giro automático" aria-label="Pausar / Reanudar giro automático">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                 <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
               </svg>
             </button>
-            <button id="resetViewBtn" class="viewer-btn" title="Centrar y reajustar vista">
+            <button type="button" id="resetViewBtn" class="viewer-btn" title="Centrar y reajustar vista" aria-label="Centrar y reajustar vista">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="9"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
             </button>
-            <button id="zoomInBtn" class="viewer-btn" title="Acercar zoom">+</button>
-            <button id="zoomOutBtn" class="viewer-btn" title="Alejar zoom">&minus;</button>
+            <button type="button" id="zoomInBtn" class="viewer-btn" title="Acercar zoom" aria-label="Acercar zoom">+</button>
+            <button type="button" id="zoomOutBtn" class="viewer-btn" title="Alejar zoom" aria-label="Alejar zoom">&minus;</button>
           </div>
 
           <div class="viewer-hint">Arrastra para rotar en 3D · Rueda / Pellizca para zoom</div>
@@ -262,7 +280,7 @@
                 <span class="phase-tag" id="phaseTag">Gas</span>
               </div>
             </div>
-            <button id="shareElementBtn" class="share-btn" title="Copiar enlace directo al elemento" aria-label="Copiar enlace directo al elemento">
+            <button type="button" id="shareElementBtn" class="share-btn" title="Copiar enlace directo al elemento" aria-label="Copiar enlace directo al elemento">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>

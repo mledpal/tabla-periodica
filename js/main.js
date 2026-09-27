@@ -16,6 +16,7 @@
   const heatmapMaxVal = document.getElementById("heatmapMaxVal");
   const heatmapGradientTrack = document.getElementById("heatmapGradientTrack");
   const quickTooltip = document.getElementById("quickTooltip");
+  const themeToggleBtn = document.getElementById("themeToggleBtn");
 
   // Modal DOM Elements
   const modalOverlay = document.getElementById("modalOverlay");
@@ -39,7 +40,110 @@
   let currentColorMode = "cat";
   let isSpinning = true;
   let viewerFailed = false;
+  let previewPanel = null;
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const BLOCK_LABELS = { s: "Bloque s", p: "Bloque p", d: "Bloque d", f: "Bloque f" };
+  const PHASE_LABELS = { solido: "Sólido", liquido: "Líquido", gas: "Gas", sintetico: "Sintético / desconocido" };
+
+  // ================= UTILIDADES =================
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // "[Ar] 3d6 4s2" -> "[Ar] 3d<sup>6</sup> 4s<sup>2</sup>"
+  function configHtml(configStr){
+    return escapeHtml(shortConfig(configStr)).replace(/(\d[spdf])(\d+)/g, "$1<sup>$2</sup>");
+  }
+
+  function formatWeight(el){
+    if(typeof el.w !== "number") return el.w;
+    return el.w % 1 === 0 ? `[${el.w}]` : el.w.toFixed(el.w < 10 ? 3 : 2);
+  }
+
+  function phaseOf(el){
+    return getNormalizedPhase(el);
+  }
+
+  // ================= MODOS DE COLOR =================
+  // Cada modo define cómo se colorea una celda y qué leyenda se muestra.
+  //  - type "class": asigna una clase CSS por categoría y muestra una leyenda pulsable
+  //  - type "heat": interpola un gradiente según un valor numérico y muestra una escala
+  const HEAT_NO_DATA = { background: "#1e293b", color: "#94a3b8" };
+
+  function yearValue(el){
+    const y = parseInt(el.year, 10);
+    return isNaN(y) ? 1600 : y; // "Antigüedad" se coloca al inicio de la escala
+  }
+
+  const COLOR_MODES = {
+    cat: {
+      type: "class",
+      classFor: el => `cat-${el.cat}`,
+      legend: () => Object.keys(CATEGORY_LABELS)
+        .map(cat => ({ key: cat, label: CATEGORY_LABELS[cat], cls: `cat-${cat}`, count: ELEMENTS.filter(e => e.cat === cat).length }))
+        .filter(item => item.count > 0),
+      isActive: key => activeCategoryFilter === key,
+      hasActive: () => activeCategoryFilter !== null,
+      onPick: key => toggleCategoryFilter(key)
+    },
+    block: {
+      type: "class",
+      classFor: el => `block-${getBlock(el)}`,
+      legend: () => ["s", "p", "d", "f"].map(b => ({ key: b, label: BLOCK_LABELS[b], cls: `block-${b}`, count: ELEMENTS.filter(e => getBlock(e) === b).length })),
+      isActive: key => activeBlockFilter === key,
+      hasActive: () => activeBlockFilter !== "all",
+      onPick: key => setBlockFilter(activeBlockFilter === key ? "all" : key)
+    },
+    phase: {
+      type: "class",
+      classFor: el => `phase-${phaseOf(el)}`,
+      legend: () => ["solido", "liquido", "gas", "sintetico"].map(p => ({ key: p, label: PHASE_LABELS[p], cls: `phase-${p}`, count: ELEMENTS.filter(e => phaseOf(e) === p).length })),
+      isActive: key => activePhaseFilter === key,
+      hasActive: () => activePhaseFilter !== "all",
+      onPick: key => setPhaseFilter(activePhaseFilter === key ? "all" : key)
+    },
+    electroneg: {
+      type: "heat",
+      label: "Electronegatividad",
+      value: el => el.en,
+      format: v => `${v.toFixed(2)} (Pauling)`,
+      stops: [[0.0, [30, 58, 138]], [0.25, [6, 182, 212]], [0.5, [16, 185, 129]], [0.75, [245, 158, 11]], [1.0, [239, 68, 68]]]
+    },
+    density: {
+      type: "heat",
+      label: "Densidad",
+      value: el => el.den,
+      log: true,
+      format: v => `${v} g/cm³`,
+      stops: [[0.0, [15, 23, 42]], [0.3, [2, 132, 199]], [0.6, [139, 92, 246]], [0.85, [236, 72, 153]], [1.0, [251, 191, 36]]]
+    },
+    year: {
+      type: "heat",
+      label: "Descubrimiento",
+      value: yearValue,
+      format: (v, el) => isNaN(parseInt(el.year, 10)) ? "Antigüedad" : String(v),
+      stops: [[0.0, [217, 119, 6]], [0.3, [5, 150, 105]], [0.6, [2, 132, 199]], [0.85, [99, 102, 241]], [1.0, [217, 70, 239]]]
+    }
+  };
+
+  // Rango [min, max] de un modo de mapa de calor, con los elementos que lo marcan
+  function heatRange(mode){
+    let min = null, max = null;
+    ELEMENTS.forEach(el => {
+      const v = mode.value(el);
+      if(v === null || v === undefined) return;
+      if(!min || v < min.v) min = { v, el };
+      if(!max || v > max.v) max = { v, el };
+    });
+    return { min, max };
+  }
+
+  function heatRatio(mode, range, v){
+    const t = x => mode.log ? Math.log10(x + 0.0001) : x;
+    const lo = t(range.min.v), hi = t(range.max.v);
+    return Math.max(0, Math.min(1, (t(v) - lo) / (hi - lo)));
+  }
 
   // ================= BUILD PERIOD & GROUP HEADERS =================
   function buildHeaders(){
@@ -82,6 +186,12 @@
   function buildGrid(){
     grid.innerHTML = "";
 
+    // Panel de vista previa en el hueco entre los grupos 3 y 12 (periodos 1-3)
+    previewPanel = document.createElement("div");
+    previewPanel.className = "preview-panel";
+    previewPanel.setAttribute("aria-hidden", "true");
+    grid.appendChild(previewPanel);
+
     // Add elements
     ELEMENTS.forEach(el => {
       const cell = document.createElement("button");
@@ -91,18 +201,15 @@
       cell.setAttribute("aria-label", `${el.name}, ${el.s}, número atómico ${el.n}, ${CATEGORY_LABELS[el.cat]}`);
       cell.dataset.number = el.n;
       cell.dataset.symbol = el.s;
-      cell.dataset.cat = el.cat;
-      cell.dataset.block = getBlock(el);
-      cell.dataset.phase = getNormalizedPhase(el);
-      cell.style.gridRow = el.row;
-      cell.style.gridColumn = el.col;
-
-      const weightDisplay = typeof el.w === "number" ? (el.w % 1 === 0 ? el.w : el.w.toFixed(el.w < 10 ? 3 : 2)) : el.w;
+      cell.style.setProperty("--row", el.row);
+      cell.style.setProperty("--col", el.col);
+      // Retardo de la animación de entrada: una onda diagonal desde la esquina superior izquierda
+      cell.style.setProperty("--delay", `${(el.row + el.col) * 22}ms`);
 
       cell.innerHTML = `
         <div class="cell-top">
           <span class="num">${el.n}</span>
-          <span class="mass-sub">${weightDisplay}</span>
+          <span class="mass-sub">${formatWeight(el)}</span>
         </div>
         <span class="sym">${el.s}</span>
         <span class="nm">${el.name}</span>
@@ -110,40 +217,69 @@
 
       // Events
       cell.addEventListener("click", () => openModal(el.n));
-      cell.addEventListener("mouseenter", (e) => showQuickTooltip(e, el));
+      cell.addEventListener("mouseenter", (e) => { showPreview(el); showQuickTooltip(e, el); });
       cell.addEventListener("mouseleave", hideQuickTooltip);
-      cell.addEventListener("focus", (e) => { setRovingCell(cell); showQuickTooltip(e, el); });
+      cell.addEventListener("focus", (e) => { setRovingCell(cell); showPreview(el); showQuickTooltip(e, el); });
       cell.addEventListener("blur", hideQuickTooltip);
 
       grid.appendChild(cell);
     });
 
     // Placeholders for Lanthanides (57-71) and Actinides (89-103) in main body
-    const lanthHolder = document.createElement("button");
-    lanthHolder.type = "button";
-    lanthHolder.tabIndex = -1;
-    lanthHolder.className = "placeholder-cell";
-    lanthHolder.style.gridRow = 6;
-    lanthHolder.style.gridColumn = 3;
-    lanthHolder.innerHTML = '<span>57-71</span><span class="ph-range">La-Lu</span>';
-    lanthHolder.title = "Ver serie de los Lantánidos (Tierras raras)";
-    lanthHolder.setAttribute("aria-label", "Filtrar lantánidos, elementos 57 a 71");
-    lanthHolder.addEventListener("click", () => highlightSeries("lantanido"));
-    grid.appendChild(lanthHolder);
-
-    const actinHolder = document.createElement("button");
-    actinHolder.type = "button";
-    actinHolder.tabIndex = -1;
-    actinHolder.className = "placeholder-cell";
-    actinHolder.style.gridRow = 7;
-    actinHolder.style.gridColumn = 3;
-    actinHolder.innerHTML = '<span>89-103</span><span class="ph-range">Ac-Lr</span>';
-    actinHolder.title = "Ver serie de los Actínidos";
-    actinHolder.setAttribute("aria-label", "Filtrar actínidos, elementos 89 a 103");
-    actinHolder.addEventListener("click", () => highlightSeries("actinido"));
-    grid.appendChild(actinHolder);
+    const series = [
+      { row: 6, cat: "lantanido", range: "57-71", sym: "La-Lu", title: "Ver serie de los Lantánidos (Tierras raras)", aria: "Filtrar lantánidos, elementos 57 a 71" },
+      { row: 7, cat: "actinido", range: "89-103", sym: "Ac-Lr", title: "Ver serie de los Actínidos", aria: "Filtrar actínidos, elementos 89 a 103" }
+    ];
+    series.forEach(s => {
+      const holder = document.createElement("button");
+      holder.type = "button";
+      holder.tabIndex = -1;
+      holder.className = `placeholder-cell placeholder-${s.cat}`;
+      holder.style.setProperty("--row", s.row);
+      holder.style.setProperty("--col", 3);
+      holder.innerHTML = `<span>${s.range}</span><span class="ph-range">${s.sym}</span>`;
+      holder.title = s.title;
+      holder.setAttribute("aria-label", s.aria);
+      holder.addEventListener("click", () => toggleCategoryFilter(s.cat));
+      grid.appendChild(holder);
+    });
 
     applyColorMode();
+  }
+
+  // ================= PANEL DE VISTA PREVIA =================
+  function showPreview(el){
+    if(!previewPanel) return;
+    if(!el){
+      previewPanel.innerHTML = `
+        <div class="pv-empty">
+          <span class="pv-empty-title">Explora los 118 elementos</span>
+          <span>Pasa el ratón o muévete con las flechas para ver un resumen.<br>Pulsa un elemento para abrir su modelo atómico 3D.</span>
+        </div>`;
+      return;
+    }
+
+    const cell = cellFor(el.n);
+    const cs = cell ? getComputedStyle(cell) : null;
+    const mode = COLOR_MODES[currentColorMode];
+    let metric = "";
+    if(mode.type === "heat"){
+      const v = mode.value(el);
+      metric = `<div class="pv-metric"><span>${mode.label}</span><strong>${v === null || v === undefined ? "Sin datos" : escapeHtml(mode.format(v, el))}</strong></div>`;
+    }
+
+    previewPanel.innerHTML = `
+      <div class="pv-tile" style="background:${cs ? cs.backgroundColor : ""};color:${cs ? cs.color : ""}">
+        <span class="pv-num">${el.n}</span>
+        <span class="pv-sym">${el.s}</span>
+        <span class="pv-mass">${formatWeight(el)}</span>
+      </div>
+      <div class="pv-info">
+        <div class="pv-name">${escapeHtml(el.name)}</div>
+        <div class="pv-tags">${escapeHtml(CATEGORY_LABELS[el.cat])} · Bloque ${getBlock(el)} · ${escapeHtml(el.phase)}</div>
+        <div class="pv-config">${configHtml(el.cfg)}</div>
+        ${metric}
+      </div>`;
   }
 
   // ================= NAVEGACIÓN CON TECLADO EN LA TABLA =================
@@ -157,14 +293,15 @@
   }
 
   // Busca la celda más cercana en una dirección, saltando huecos de la tabla
+  const ELEMENT_AT = {};
+  ELEMENTS.forEach(e => { ELEMENT_AT[`${e.row},${e.col}`] = e; });
+
   function neighbourOf(el, dRow, dCol){
-    const byPos = {};
-    ELEMENTS.forEach(e => { byPos[`${e.row},${e.col}`] = e; });
     let row = el.row, col = el.col;
     for(let i = 0; i < 18; i++){
       row += dRow; col += dCol;
       if(row < 1 || row > 10 || col < 1 || col > 18) return null;
-      if(byPos[`${row},${col}`]) return byPos[`${row},${col}`];
+      if(ELEMENT_AT[`${row},${col}`]) return ELEMENT_AT[`${row},${col}`];
     }
     return null;
   }
@@ -183,25 +320,18 @@
     if(target) cellFor(target.n).focus();
   });
 
-  function highlightSeries(cat){
-    toggleCategoryFilter(cat);
-  }
-
   // ================= TOOLTIP =================
+  // Solo se usa cuando el panel de vista previa no está visible (pantallas estrechas)
   function showQuickTooltip(e, el){
+    if(previewPanel && previewPanel.offsetParent !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const catName = CATEGORY_LABELS[el.cat] || el.cat;
-    const block = getBlock(el).toUpperCase();
-    const weight = el.w + " u";
-
     quickTooltip.innerHTML = `
       <div class="tooltip-header">
-        <span style="color: var(--accent); font-family: 'JetBrains Mono', monospace;">[${el.n}] ${el.s}</span>
-        <span>${el.name}</span>
+        <span class="tooltip-symbol">[${el.n}] ${el.s}</span>
+        <span>${escapeHtml(el.name)}</span>
       </div>
-      <div class="tooltip-meta">${catName} · Bloque ${block} · ${el.phase} · ${weight}</div>
+      <div class="tooltip-meta">${escapeHtml(CATEGORY_LABELS[el.cat])} · Bloque ${getBlock(el).toUpperCase()} · ${escapeHtml(el.phase)} · ${el.w} u</div>
     `;
-
     quickTooltip.style.left = (rect.left + rect.width / 2) + "px";
     quickTooltip.style.top = (rect.top - 6) + "px";
     quickTooltip.style.display = "block";
@@ -211,160 +341,87 @@
     quickTooltip.style.display = "none";
   }
 
-  // ================= LEGEND =================
-  function buildLegend(){
+  // ================= LEYENDA =================
+  function renderLegend(){
+    const mode = COLOR_MODES[currentColorMode];
     legend.innerHTML = "";
-    Object.keys(CATEGORY_LABELS).forEach(cat => {
-      const count = ELEMENTS.filter(e => e.cat === cat).length;
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "legend-item";
-      item.setAttribute("aria-pressed", "false");
-      item.dataset.cat = cat;
-      item.innerHTML = `
-        <span class="legend-swatch cat-${cat}"></span>
-        <span>${CATEGORY_LABELS[cat]} (${count})</span>
+
+    if(mode.type === "heat"){
+      legend.style.display = "none";
+      return;
+    }
+    legend.style.display = "flex";
+
+    mode.legend().forEach(item => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "legend-item";
+      const active = mode.isActive(item.key);
+      btn.classList.toggle("active-filter", active);
+      btn.classList.toggle("disabled", mode.hasActive() && !active);
+      btn.setAttribute("aria-pressed", String(active));
+      btn.innerHTML = `
+        <span class="legend-swatch ${item.cls}"></span>
+        <span>${escapeHtml(item.label)} <span class="legend-count">${item.count}</span></span>
       `;
-      item.addEventListener("click", () => toggleCategoryFilter(cat));
-      legend.appendChild(item);
+      btn.addEventListener("click", () => mode.onPick(item.key));
+      legend.appendChild(btn);
     });
   }
 
   function toggleCategoryFilter(cat){
     activeCategoryFilter = (activeCategoryFilter === cat) ? null : cat;
-    document.querySelectorAll(".legend-item").forEach(li => {
-      li.classList.toggle("active-filter", activeCategoryFilter === li.dataset.cat);
-      li.setAttribute("aria-pressed", String(activeCategoryFilter === li.dataset.cat));
-      li.classList.toggle("disabled", activeCategoryFilter && li.dataset.cat !== activeCategoryFilter);
-    });
+    applyFilters();
+  }
+
+  function setPhaseFilter(phase){
+    activePhaseFilter = phase;
+    setActiveChip(phaseFilterGroup, phaseFilterGroup.querySelector(`[data-phase="${phase}"]`));
+    applyFilters();
+  }
+
+  function setBlockFilter(block){
+    activeBlockFilter = block;
+    setActiveChip(blockFilterGroup, blockFilterGroup.querySelector(`[data-block="${block}"]`));
     applyFilters();
   }
 
   // ================= COLOR MODES & HEATMAPS =================
   function applyColorMode(){
     currentColorMode = colorModeSelect.value;
-    const cells = document.querySelectorAll(".element-cell");
+    const mode = COLOR_MODES[currentColorMode];
+    const cells = grid.querySelectorAll(".element-cell");
 
-    if(currentColorMode === "cat"){
+    if(mode.type === "class"){
       heatmapScaleBar.style.display = "none";
-      legend.style.display = "flex";
       cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
-        cell.className = `element-cell cat-${el.cat}`;
+        const el = ELEMENTS_BY_NUMBER[parseInt(cell.dataset.number, 10)];
+        cell.className = `element-cell ${mode.classFor(el)}`;
         cell.style.background = "";
         cell.style.color = "";
       });
-    }
-    else if(currentColorMode === "block"){
-      heatmapScaleBar.style.display = "none";
-      legend.style.display = "none";
-      cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
-        const block = getBlock(el);
-        cell.className = `element-cell block-${block}`;
-        cell.style.background = "";
-        cell.style.color = "";
-      });
-    }
-    else if(currentColorMode === "phase"){
-      heatmapScaleBar.style.display = "none";
-      legend.style.display = "none";
-      cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
-        const phase = getNormalizedPhase(el);
-        cell.className = `element-cell phase-${phase}`;
-        cell.style.background = "";
-        cell.style.color = "";
-      });
-    }
-    else if(currentColorMode === "electroneg"){
-      legend.style.display = "none";
+    } else {
+      const range = heatRange(mode);
       heatmapScaleBar.style.display = "flex";
-      heatmapMinVal.textContent = "0.70 (Fr)";
-      heatmapMaxVal.textContent = "3.98 (F)";
-      heatmapGradientTrack.style.background = "linear-gradient(90deg, #1e3a8a, #06b6d4, #10b981, #f59e0b, #ef4444)";
+      heatmapMinVal.textContent = `${mode.format(range.min.v, range.min.el)} (${range.min.el.s})`;
+      heatmapMaxVal.textContent = `${mode.format(range.max.v, range.max.el)} (${range.max.el.s})`;
+      heatmapGradientTrack.style.background = `linear-gradient(90deg, ${mode.stops.map(([pos, c]) => `rgb(${c.join(",")}) ${pos * 100}%`).join(", ")})`;
 
       cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
+        const el = ELEMENTS_BY_NUMBER[parseInt(cell.dataset.number, 10)];
         cell.className = "element-cell";
-        if(el.en === null){
-          cell.style.background = "#1e293b";
-          cell.style.color = "#94a3b8";
+        const v = mode.value(el);
+        if(v === null || v === undefined){
+          cell.style.background = HEAT_NO_DATA.background;
+          cell.style.color = HEAT_NO_DATA.color;
         } else {
-          // Normalize from 0.7 to 4.0
-          const ratio = Math.max(0, Math.min(1, (el.en - 0.7) / (4.0 - 0.7)));
-          paintHeat(cell, interpolateColor(ratio, [
-            [0.0, [30, 58, 138]],
-            [0.25, [6, 182, 212]],
-            [0.5, [16, 185, 129]],
-            [0.75, [245, 158, 11]],
-            [1.0, [239, 68, 68]]
-          ]));
+          paintHeat(cell, interpolateColor(heatRatio(mode, range, v), mode.stops));
         }
-      });
-    }
-    else if(currentColorMode === "density"){
-      legend.style.display = "none";
-      heatmapScaleBar.style.display = "flex";
-      heatmapMinVal.textContent = "0.00009 g/cm³ (H)";
-      heatmapMaxVal.textContent = "22.59 g/cm³ (Os)";
-      heatmapGradientTrack.style.background = "linear-gradient(90deg, #0f172a, #0284c7, #8b5cf6, #ec4899, #fbbf24)";
-
-      cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
-        cell.className = "element-cell";
-        if(el.den === null){
-          cell.style.background = "#1e293b";
-          cell.style.color = "#94a3b8";
-        } else {
-          // Logarithmic density scale
-          const logVal = Math.log10(el.den + 0.0001);
-          const minLog = Math.log10(0.00009 + 0.0001);
-          const maxLog = Math.log10(22.59 + 0.0001);
-          const ratio = Math.max(0, Math.min(1, (logVal - minLog) / (maxLog - minLog)));
-
-          paintHeat(cell, interpolateColor(ratio, [
-            [0.0, [15, 23, 42]],
-            [0.3, [2, 132, 199]],
-            [0.6, [139, 92, 246]],
-            [0.85, [236, 72, 153]],
-            [1.0, [251, 191, 36]]
-          ]));
-        }
-      });
-    }
-    else if(currentColorMode === "year"){
-      legend.style.display = "none";
-      heatmapScaleBar.style.display = "flex";
-      heatmapMinVal.textContent = "Antigüedad (Oro, Hierro...)";
-      heatmapMaxVal.textContent = "2010 (Teneso)";
-      heatmapGradientTrack.style.background = "linear-gradient(90deg, #d97706, #059669, #0284c7, #6366f1, #d946ef)";
-
-      cells.forEach(cell => {
-        const num = parseInt(cell.dataset.number, 10);
-        const el = ELEMENTS_BY_NUMBER[num];
-        cell.className = "element-cell";
-        const yr = parseInt(el.year, 10);
-        let ratio;
-        if(isNaN(yr)) ratio = 0; // Antigüedad
-        else ratio = Math.max(0.1, Math.min(1, (yr - 1600) / (2010 - 1600)));
-
-        paintHeat(cell, interpolateColor(ratio, [
-          [0.0, [217, 119, 6]],
-          [0.3, [5, 150, 105]],
-          [0.6, [2, 132, 199]],
-          [0.85, [99, 102, 241]],
-          [1.0, [217, 70, 239]]
-        ]));
       });
     }
 
     applyFilters();
+    showPreview(null);
   }
 
   function interpolateColor(ratio, stops){
@@ -412,21 +469,13 @@
     // Toggle clear search button
     clearSearchBtn.style.display = query ? "block" : "none";
 
-    document.querySelectorAll(".element-cell").forEach(cell => {
-      const num = parseInt(cell.dataset.number, 10);
-      const el = ELEMENTS_BY_NUMBER[num];
+    grid.querySelectorAll(".element-cell").forEach(cell => {
+      const el = ELEMENTS_BY_NUMBER[parseInt(cell.dataset.number, 10)];
       let visible = true;
 
-      // Category filter
       if(activeCategoryFilter && el.cat !== activeCategoryFilter) visible = false;
-
-      // Phase filter
-      if(activePhaseFilter !== "all" && getNormalizedPhase(el) !== activePhaseFilter) visible = false;
-
-      // Block filter
+      if(activePhaseFilter !== "all" && phaseOf(el) !== activePhaseFilter) visible = false;
       if(activeBlockFilter !== "all" && getBlock(el) !== activeBlockFilter) visible = false;
-
-      // Search query
       if(query && !matchesQuery(el, query)) visible = false;
 
       cell.classList.toggle("dimmed", !visible);
@@ -440,6 +489,8 @@
                              activeBlockFilter !== "all" ||
                              query.length > 0;
     resetFiltersBtn.style.display = hasActiveFilters ? "flex" : "none";
+
+    renderLegend();
   }
 
   function resetFilters(){
@@ -447,22 +498,16 @@
     activePhaseFilter = "all";
     activeBlockFilter = "all";
     searchInput.value = "";
-
-    document.querySelectorAll(".legend-item").forEach(li => {
-      li.classList.remove("active-filter", "disabled");
-      li.setAttribute("aria-pressed", "false");
-    });
     setActiveChip(phaseFilterGroup, phaseFilterGroup.querySelector('[data-phase="all"]'));
     setActiveChip(blockFilterGroup, blockFilterGroup.querySelector('[data-block="all"]'));
-
     applyFilters();
   }
 
   // ================= MODAL & 3D VIEWER =================
   function openModal(number, updateHistory = true){
-    currentNumber = number;
     const el = ELEMENTS_BY_NUMBER[number];
     if(!el) return;
+    currentNumber = number;
 
     // Symbol & Category
     const bigSymbol = document.getElementById("bigSymbol");
@@ -475,57 +520,45 @@
     document.getElementById("atomicNumberBadge").textContent = `Z = ${el.n}`;
 
     // Particles
-    const protons = el.n;
-    const neutrons = Math.max(0, el.m - el.n);
-    const electrons = el.n;
-    document.getElementById("protonCount").textContent = protons;
-    document.getElementById("neutronCount").textContent = neutrons;
-    document.getElementById("electronCount").textContent = electrons;
+    document.getElementById("protonCount").textContent = el.n;
+    document.getElementById("neutronCount").textContent = Math.max(0, el.m - el.n);
+    document.getElementById("electronCount").textContent = el.n;
 
     // Properties
-    const weightLabel = (el.w % 1 === 0) ? `[${el.w}]` : el.w;
-    document.getElementById("dataMass").textContent = `${weightLabel} u (Isótopo ref: ${el.m})`;
+    document.getElementById("dataMass").textContent = `${formatWeight(el)} u (isótopo ref.: ${el.m})`;
     document.getElementById("dataPeriodGroup").textContent = `Periodo ${periodOf(el)} · Grupo ${groupOf(el)}`;
     document.getElementById("dataPhase").textContent = el.phase;
     document.getElementById("dataDensity").textContent = el.den !== null ? `${el.den} g/cm³` : "Desconocida";
 
     // Electronegativity with visual Pauling gauge
+    const gauge = document.getElementById("electronegGauge");
     if(el.en !== null){
       document.getElementById("dataElectroneg").textContent = `${el.en} (Pauling)`;
-      const pct = Math.min(100, Math.max(0, (el.en / 4.0) * 100));
-      document.getElementById("electronegGauge").style.width = `${pct}%`;
+      gauge.style.width = `${Math.min(100, Math.max(0, (el.en / 4.0) * 100))}%`;
     } else {
       document.getElementById("dataElectroneg").textContent = "Sin datos";
-      document.getElementById("electronegGauge").style.width = "0%";
+      gauge.style.width = "0%";
     }
 
     // Melting & Boiling in K and °C
-    if(el.mp !== null){
-      const c = kelvinToCelsius(el.mp);
-      document.getElementById("dataMelting").textContent = `${el.mp} K (${c} °C)`;
-    } else {
-      document.getElementById("dataMelting").textContent = "Desconocido";
-    }
+    document.getElementById("dataMelting").textContent = el.mp !== null ? `${el.mp} K (${kelvinToCelsius(el.mp)} °C)` : "Desconocido";
+    document.getElementById("dataBoiling").textContent = el.bp !== null ? `${el.bp} K (${kelvinToCelsius(el.bp)} °C)` : "Desconocido";
 
-    if(el.bp !== null){
-      const c = kelvinToCelsius(el.bp);
-      document.getElementById("dataBoiling").textContent = `${el.bp} K (${c} °C)`;
-    } else {
-      document.getElementById("dataBoiling").textContent = "Desconocido";
-    }
-
-    document.getElementById("dataConfig").textContent = el.cfg;
+    const configEl = document.getElementById("dataConfig");
+    configEl.innerHTML = configHtml(el.cfg);
+    configEl.title = el.cfg;
     document.getElementById("dataYear").textContent = isNaN(parseInt(el.year, 10)) ? el.year : `Año ${el.year}`;
     document.getElementById("elementSummary").textContent = el.desc;
 
-    // Bohr Shells breakdown
+    // Bohr Shells breakdown (mismos colores que las órbitas del visor 3D)
     const shells = getShellOccupancy(el.cfg);
-    const shellBadges = shells.map((count, idx) => {
-      const letter = SHELL_LETTERS[idx] || `n=${idx+1}`;
-      return `<strong>${letter}</strong>: ${count}`;
-    }).join(" &nbsp;·&nbsp; ");
-
-    document.getElementById("shellInfo").innerHTML = `Capas Bohr (${shells.length}):<br>${shellBadges}`;
+    document.getElementById("shellInfo").innerHTML = `
+      <span class="shell-info-title">Capas de Bohr</span>
+      <span class="shell-chips">${shells.map((count, idx) => `
+        <span class="shell-chip${idx === shells.length - 1 ? " valence" : ""}" style="--shell:${SHELL_COLORS[idx]}" title="Capa ${SHELL_LETTERS[idx]}${idx === shells.length - 1 ? " (valencia)" : ""}: ${count} electrones">
+          <strong>${SHELL_LETTERS[idx] || `n=${idx + 1}`}</strong>${count}
+        </span>`).join("")}
+      </span>`;
 
     // Open Modal Overlay
     const wasOpen = modalOverlay.classList.contains("active");
@@ -580,13 +613,13 @@
   function buildBohrSvg(el, shells){
     const size = 400, c = size / 2;
     const step = Math.min(24, 150 / Math.max(1, shells.length));
-    let svg = `<svg class="bohr-2d" viewBox="0 0 ${size} ${size}" role="img" aria-label="Modelo de Bohr de ${el.name}">`;
+    let svg = `<svg class="bohr-2d" viewBox="0 0 ${size} ${size}" role="img" aria-label="Modelo de Bohr de ${escapeHtml(el.name)}">`;
     shells.forEach((count, idx) => {
       const r = 42 + (idx + 1) * step;
-      svg += `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.3"/>`;
+      svg += `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${SHELL_COLORS[idx]}" stroke-opacity="0.35"/>`;
       for(let i = 0; i < count; i++){
         const a = (i / count) * Math.PI * 2 - Math.PI / 2;
-        svg += `<circle cx="${(c + Math.cos(a) * r).toFixed(1)}" cy="${(c + Math.sin(a) * r).toFixed(1)}" r="4" fill="var(--accent)"/>`;
+        svg += `<circle cx="${(c + Math.cos(a) * r).toFixed(1)}" cy="${(c + Math.sin(a) * r).toFixed(1)}" r="4" fill="${SHELL_COLORS[idx]}"/>`;
       }
     });
     svg += `<circle cx="${c}" cy="${c}" r="34" fill="#ff5376" fill-opacity="0.85"/>`;
@@ -610,10 +643,14 @@
   }
 
   function updateNavButtons(){
-    prevBtn.disabled = currentNumber <= 1;
-    nextBtn.disabled = currentNumber >= 118;
-    prevBtn.style.opacity = prevBtn.disabled ? 0.3 : 1;
-    nextBtn.style.opacity = nextBtn.disabled ? 0.3 : 1;
+    const prev = ELEMENTS_BY_NUMBER[currentNumber - 1];
+    const next = ELEMENTS_BY_NUMBER[currentNumber + 1];
+    prevBtn.disabled = !prev;
+    nextBtn.disabled = !next;
+    prevBtn.title = prev ? `Anterior: ${prev.name} (←)` : "";
+    nextBtn.title = next ? `Siguiente: ${next.name} (→)` : "";
+    prevBtn.setAttribute("aria-label", prev ? `Elemento anterior: ${prev.name}` : "Elemento anterior");
+    nextBtn.setAttribute("aria-label", next ? `Elemento siguiente: ${next.name}` : "Elemento siguiente");
   }
 
   function closeModal(updateHistory = true){
@@ -635,6 +672,32 @@
     if(history.state && history.state.modal) history.back();
     else history.replaceState(null, "", window.location.pathname + window.location.search);
   }
+
+  // ================= TEMA CLARO / OSCURO =================
+  function readStoredTheme(){
+    try { return localStorage.getItem("theme"); } catch(err){ return null; }
+  }
+
+  function effectiveTheme(){
+    return document.documentElement.dataset.theme ||
+      (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  }
+
+  function applyTheme(theme){
+    if(theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    const current = effectiveTheme();
+    const label = current === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro";
+    themeToggleBtn.setAttribute("aria-label", label);
+    themeToggleBtn.title = label;
+    themeToggleBtn.dataset.current = current;
+    document.querySelector('meta[name="theme-color"]').content = current === "dark" ? "#080b12" : "#eef2f8";
+  }
+
+  themeToggleBtn.addEventListener("click", () => {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    try { localStorage.setItem("theme", next); } catch(err){}
+    applyTheme(next);
+  });
 
   // ================= TOAST NOTIFICATION =================
   let toastTimer = null;
@@ -668,22 +731,14 @@
     });
   }
 
-  // Phase filter buttons
   phaseFilterGroup.addEventListener("click", (e) => {
     const chip = e.target.closest(".filter-chip");
-    if(!chip) return;
-    setActiveChip(phaseFilterGroup, chip);
-    activePhaseFilter = chip.dataset.phase;
-    applyFilters();
+    if(chip) setPhaseFilter(chip.dataset.phase);
   });
 
-  // Block filter buttons
   blockFilterGroup.addEventListener("click", (e) => {
     const chip = e.target.closest(".filter-chip");
-    if(!chip) return;
-    setActiveChip(blockFilterGroup, chip);
-    activeBlockFilter = chip.dataset.block;
-    applyFilters();
+    if(chip) setBlockFilter(chip.dataset.block);
   });
 
   // Reset all filters button
@@ -709,6 +764,7 @@
         ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
         : `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
       toggleSpinBtn.title = isSpinning ? "Pausar giro automático" : "Reanudar giro automático";
+      toggleSpinBtn.setAttribute("aria-label", toggleSpinBtn.title);
     }
   });
   resetViewBtn.addEventListener("click", () => {
@@ -756,7 +812,7 @@
       if(e.key === "Escape") closeModal();
       if(e.key === "ArrowRight" && currentNumber < 118) openModal(currentNumber + 1);
       if(e.key === "ArrowLeft" && currentNumber > 1) openModal(currentNumber - 1);
-      if(e.key === " " && atomViewer){
+      if(e.key === " " && atomViewer && !e.target.closest("button")){
         e.preventDefault();
         toggleSpinBtn.click();
       }
@@ -800,9 +856,9 @@
   window.addEventListener("popstate", checkUrlHash);
 
   // Initialize
+  applyTheme(readStoredTheme());
   buildHeaders();
   buildGrid();
-  buildLegend();
   checkUrlHash();
 
 })();

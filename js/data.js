@@ -205,3 +205,15 @@ function getShellOccupancy(configStr){
 function normalizeText(str){
   return String(str || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
+
+// Colores de las capas electrónicas (K → Q), compartidos por el visor 3D y la ficha
+const SHELL_COLORS = ["#00f0ff", "#38bdf8", "#818cf8", "#c084fc", "#f472b6", "#fb923c", "#facc15"];
+
+// Notación abreviada con el núcleo de gas noble: "1s2 2s2 2p6 3s1" -> "[Ne] 3s1"
+function shortConfig(configStr){
+  const cores = [["Rn", CORE_RN], ["Xe", CORE_XE], ["Kr", CORE_KR], ["Ar", CORE_AR], ["Ne", CORE_NE], ["He", CORE_HE]];
+  for(const [sym, core] of cores){
+    if(configStr.startsWith(core + " ")) return `[${sym}] ${configStr.slice(core.length + 1)}`;
+  }
+  return configStr;
+}
