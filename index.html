@@ -133,11 +133,11 @@
     <div class="filter-group">
       <span class="filter-group-label">Estado:</span>
       <div class="filter-buttons" id="phaseFilterGroup">
-        <button class="filter-chip active" data-phase="all">Todos</button>
-        <button class="filter-chip" data-phase="solido">Sólidos</button>
-        <button class="filter-chip" data-phase="liquido">Líquidos</button>
-        <button class="filter-chip" data-phase="gas">Gases</button>
-        <button class="filter-chip" data-phase="sintetico">Sintéticos</button>
+        <button type="button" class="filter-chip active" data-phase="all" aria-pressed="true">Todos</button>
+        <button type="button" class="filter-chip" data-phase="solido" aria-pressed="false">Sólidos</button>
+        <button type="button" class="filter-chip" data-phase="liquido" aria-pressed="false">Líquidos</button>
+        <button type="button" class="filter-chip" data-phase="gas" aria-pressed="false">Gases</button>
+        <button type="button" class="filter-chip" data-phase="sintetico" aria-pressed="false">Sintéticos</button>
       </div>
     </div>
 
@@ -145,17 +145,17 @@
     <div class="filter-group">
       <span class="filter-group-label">Bloque:</span>
       <div class="filter-buttons" id="blockFilterGroup">
-        <button class="filter-chip active" data-block="all">Todos</button>
-        <button class="filter-chip chip-block-s" data-block="s">s</button>
-        <button class="filter-chip chip-block-p" data-block="p">p</button>
-        <button class="filter-chip chip-block-d" data-block="d">d</button>
-        <button class="filter-chip chip-block-f" data-block="f">f</button>
+        <button type="button" class="filter-chip active" data-block="all" aria-pressed="true">Todos</button>
+        <button type="button" class="filter-chip chip-block-s" data-block="s" aria-pressed="false">s</button>
+        <button type="button" class="filter-chip chip-block-p" data-block="p" aria-pressed="false">p</button>
+        <button type="button" class="filter-chip chip-block-d" data-block="d" aria-pressed="false">d</button>
+        <button type="button" class="filter-chip chip-block-f" data-block="f" aria-pressed="false">f</button>
       </div>
     </div>
 
     <!-- Active Elements Counter and Reset -->
     <div class="filter-status">
-      <span id="elementsCountBadge" class="elements-counter">118 / 118 elementos</span>
+      <span id="elementsCountBadge" class="elements-counter" aria-live="polite">118 / 118 elementos</span>
       <button id="resetFiltersBtn" class="reset-btn" title="Restablecer todos los filtros" style="display:none;">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
@@ -167,7 +167,7 @@
   </nav>
 
   <!-- Chemical Category Legend -->
-  <div class="legend" id="legend" aria-label="Leyenda de familias químicas"></div>
+  <div class="legend" id="legend" role="group" aria-label="Leyenda de familias químicas (pulsa para filtrar)"></div>
 
   <!-- Heatmap Dynamic Scale Bar (shown when heatmap mode is active) -->
   <div class="heatmap-scale-bar" id="heatmapScaleBar" style="display:none;">
@@ -191,7 +191,7 @@
       </div>
 
       <!-- Main Periodic Grid -->
-      <div class="periodic-grid" id="periodicGrid" role="grid" aria-label="Tabla Periódica de los Elementos">
+      <div class="periodic-grid" id="periodicGrid" role="group" aria-label="Tabla Periódica de los Elementos. Usa las flechas para moverte entre elementos y Intro para abrir su ficha.">
         <!-- 118 element cells dynamically generated -->
       </div>
     </div>

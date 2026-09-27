@@ -363,6 +363,9 @@ body {
   background: rgba(10, 14, 25, 0.4);
 }
 .legend-item {
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -480,6 +483,14 @@ body {
 }
 
 /* Element Cell */
+.element-cell,
+.placeholder-cell,
+.legend-item {
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: inherit;
+}
 .element-cell {
   position: relative;
   display: flex;
@@ -495,6 +506,12 @@ body {
   user-select: none;
   overflow: hidden;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.element-cell:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--bg), 0 0 18px var(--accent-glow);
+  z-index: 21;
 }
 .element-cell:hover {
   transform: translateY(-4px) scale(1.14);
@@ -522,14 +539,14 @@ body {
   width: 100%;
 }
 .element-cell .num {
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   opacity: 0.85;
   line-height: 1;
 }
 .element-cell .mass-sub {
-  font-size: 0.45rem;
+  font-size: 0.52rem;
   font-weight: 500;
   opacity: 0.7;
   font-family: 'JetBrains Mono', monospace;
@@ -549,7 +566,7 @@ body {
 
 /* Cell Bottom Name */
 .element-cell .nm {
-  font-size: 0.46rem;
+  font-size: 0.56rem;
   font-weight: 600;
   opacity: 0.9;
   text-align: center;
@@ -1143,6 +1160,23 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Las celdas estrechas no tienen espacio para la masa atómica */
+@media (max-width: 1200px) {
+  .element-cell .mass-sub { display: none; }
+}
+
+/* ================= MOVIMIENTO REDUCIDO ================= */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .glow-orb { animation: none; }
+  .element-cell:hover { transform: none; }
 }
 
 /* ================= RESPONSIVE DESIGN ================= */

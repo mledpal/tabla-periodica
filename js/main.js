@@ -19,6 +19,7 @@
 
   // Modal DOM Elements
   const modalOverlay = document.getElementById("modalOverlay");
+  const modal = document.getElementById("modal");
   const closeModalBtn = document.getElementById("closeModal");
   const prevBtn = document.getElementById("prevBtn");
   const nextBtn = document.getElementById("nextBtn");
@@ -38,6 +39,7 @@
   let currentColorMode = "cat";
   let isSpinning = true;
   let viewerFailed = false;
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // ================= BUILD PERIOD & GROUP HEADERS =================
   function buildHeaders(){
@@ -82,8 +84,11 @@
 
     // Add elements
     ELEMENTS.forEach(el => {
-      const cell = document.createElement("div");
+      const cell = document.createElement("button");
+      cell.type = "button";
       cell.className = "element-cell";
+      cell.tabIndex = el.n === 1 ? 0 : -1; // tabindex itinerante: solo una celda en el orden de tabulación
+      cell.setAttribute("aria-label", `${el.name}, ${el.s}, número atómico ${el.n}, ${CATEGORY_LABELS[el.cat]}`);
       cell.dataset.number = el.n;
       cell.dataset.symbol = el.s;
       cell.dataset.cat = el.cat;
@@ -107,31 +112,76 @@
       cell.addEventListener("click", () => openModal(el.n));
       cell.addEventListener("mouseenter", (e) => showQuickTooltip(e, el));
       cell.addEventListener("mouseleave", hideQuickTooltip);
+      cell.addEventListener("focus", (e) => { setRovingCell(cell); showQuickTooltip(e, el); });
+      cell.addEventListener("blur", hideQuickTooltip);
 
       grid.appendChild(cell);
     });
 
     // Placeholders for Lanthanides (57-71) and Actinides (89-103) in main body
-    const lanthHolder = document.createElement("div");
+    const lanthHolder = document.createElement("button");
+    lanthHolder.type = "button";
+    lanthHolder.tabIndex = -1;
     lanthHolder.className = "placeholder-cell";
     lanthHolder.style.gridRow = 6;
     lanthHolder.style.gridColumn = 3;
     lanthHolder.innerHTML = '<span>57-71</span><span class="ph-range">La-Lu</span>';
     lanthHolder.title = "Ver serie de los Lantánidos (Tierras raras)";
+    lanthHolder.setAttribute("aria-label", "Filtrar lantánidos, elementos 57 a 71");
     lanthHolder.addEventListener("click", () => highlightSeries("lantanido"));
     grid.appendChild(lanthHolder);
 
-    const actinHolder = document.createElement("div");
+    const actinHolder = document.createElement("button");
+    actinHolder.type = "button";
+    actinHolder.tabIndex = -1;
     actinHolder.className = "placeholder-cell";
     actinHolder.style.gridRow = 7;
     actinHolder.style.gridColumn = 3;
     actinHolder.innerHTML = '<span>89-103</span><span class="ph-range">Ac-Lr</span>';
     actinHolder.title = "Ver serie de los Actínidos";
+    actinHolder.setAttribute("aria-label", "Filtrar actínidos, elementos 89 a 103");
     actinHolder.addEventListener("click", () => highlightSeries("actinido"));
     grid.appendChild(actinHolder);
 
     applyColorMode();
   }
+
+  // ================= NAVEGACIÓN CON TECLADO EN LA TABLA =================
+  function cellFor(number){
+    return grid.querySelector(`.element-cell[data-number="${number}"]`);
+  }
+
+  function setRovingCell(cell){
+    grid.querySelectorAll('.element-cell[tabindex="0"]').forEach(c => { if(c !== cell) c.tabIndex = -1; });
+    cell.tabIndex = 0;
+  }
+
+  // Busca la celda más cercana en una dirección, saltando huecos de la tabla
+  function neighbourOf(el, dRow, dCol){
+    const byPos = {};
+    ELEMENTS.forEach(e => { byPos[`${e.row},${e.col}`] = e; });
+    let row = el.row, col = el.col;
+    for(let i = 0; i < 18; i++){
+      row += dRow; col += dCol;
+      if(row < 1 || row > 10 || col < 1 || col > 18) return null;
+      if(byPos[`${row},${col}`]) return byPos[`${row},${col}`];
+    }
+    return null;
+  }
+
+  grid.addEventListener("keydown", (e) => {
+    const cell = e.target.closest(".element-cell");
+    if(!cell) return;
+    const el = ELEMENTS_BY_NUMBER[parseInt(cell.dataset.number, 10)];
+    const moves = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowDown: [1, 0], ArrowUp: [-1, 0] };
+    let target = null;
+    if(moves[e.key]) target = neighbourOf(el, ...moves[e.key]);
+    else if(e.key === "Home") target = ELEMENTS.filter(x => x.row === el.row).sort((a, b) => a.col - b.col)[0];
+    else if(e.key === "End") target = ELEMENTS.filter(x => x.row === el.row).sort((a, b) => b.col - a.col)[0];
+    else return;
+    e.preventDefault();
+    if(target) cellFor(target.n).focus();
+  });
 
   function highlightSeries(cat){
     toggleCategoryFilter(cat);
@@ -166,8 +216,10 @@
     legend.innerHTML = "";
     Object.keys(CATEGORY_LABELS).forEach(cat => {
       const count = ELEMENTS.filter(e => e.cat === cat).length;
-      const item = document.createElement("div");
+      const item = document.createElement("button");
+      item.type = "button";
       item.className = "legend-item";
+      item.setAttribute("aria-pressed", "false");
       item.dataset.cat = cat;
       item.innerHTML = `
         <span class="legend-swatch cat-${cat}"></span>
@@ -182,6 +234,7 @@
     activeCategoryFilter = (activeCategoryFilter === cat) ? null : cat;
     document.querySelectorAll(".legend-item").forEach(li => {
       li.classList.toggle("active-filter", activeCategoryFilter === li.dataset.cat);
+      li.setAttribute("aria-pressed", String(activeCategoryFilter === li.dataset.cat));
       li.classList.toggle("disabled", activeCategoryFilter && li.dataset.cat !== activeCategoryFilter);
     });
     applyFilters();
@@ -240,18 +293,17 @@
         cell.className = "element-cell";
         if(el.en === null){
           cell.style.background = "#1e293b";
-          cell.style.color = "#64748b";
+          cell.style.color = "#94a3b8";
         } else {
           // Normalize from 0.7 to 4.0
           const ratio = Math.max(0, Math.min(1, (el.en - 0.7) / (4.0 - 0.7)));
-          cell.style.background = interpolateColor(ratio, [
+          paintHeat(cell, interpolateColor(ratio, [
             [0.0, [30, 58, 138]],
             [0.25, [6, 182, 212]],
             [0.5, [16, 185, 129]],
             [0.75, [245, 158, 11]],
             [1.0, [239, 68, 68]]
-          ]);
-          cell.style.color = ratio > 0.4 ? "#07090e" : "#f0f4fc";
+          ]));
         }
       });
     }
@@ -268,7 +320,7 @@
         cell.className = "element-cell";
         if(el.den === null){
           cell.style.background = "#1e293b";
-          cell.style.color = "#64748b";
+          cell.style.color = "#94a3b8";
         } else {
           // Logarithmic density scale
           const logVal = Math.log10(el.den + 0.0001);
@@ -276,14 +328,13 @@
           const maxLog = Math.log10(22.59 + 0.0001);
           const ratio = Math.max(0, Math.min(1, (logVal - minLog) / (maxLog - minLog)));
 
-          cell.style.background = interpolateColor(ratio, [
+          paintHeat(cell, interpolateColor(ratio, [
             [0.0, [15, 23, 42]],
             [0.3, [2, 132, 199]],
             [0.6, [139, 92, 246]],
             [0.85, [236, 72, 153]],
             [1.0, [251, 191, 36]]
-          ]);
-          cell.style.color = ratio > 0.5 ? "#07090e" : "#f0f4fc";
+          ]));
         }
       });
     }
@@ -303,14 +354,13 @@
         if(isNaN(yr)) ratio = 0; // Antigüedad
         else ratio = Math.max(0.1, Math.min(1, (yr - 1600) / (2010 - 1600)));
 
-        cell.style.background = interpolateColor(ratio, [
+        paintHeat(cell, interpolateColor(ratio, [
           [0.0, [217, 119, 6]],
           [0.3, [5, 150, 105]],
           [0.6, [2, 132, 199]],
           [0.85, [99, 102, 241]],
           [1.0, [217, 70, 239]]
-        ]);
-        cell.style.color = ratio > 0.4 && ratio < 0.8 ? "#07090e" : "#fff";
+        ]));
       });
     }
 
@@ -323,13 +373,23 @@
       const [pos2, col2] = stops[i + 1];
       if(ratio >= pos1 && ratio <= pos2){
         const factor = (ratio - pos1) / (pos2 - pos1);
-        const r = Math.round(col1[0] + factor * (col2[0] - col1[0]));
-        const g = Math.round(col1[1] + factor * (col2[1] - col1[1]));
-        const b = Math.round(col1[2] + factor * (col2[2] - col1[2]));
-        return `rgb(${r}, ${g}, ${b})`;
+        return col1.map((c, k) => Math.round(c + factor * (col2[k] - c)));
       }
     }
-    return `rgb(${stops[stops.length - 1][1].join(",")})`;
+    return stops[stops.length - 1][1];
+  }
+
+  // Pinta una celda con un color de mapa de calor y elige el texto (claro u oscuro) por contraste WCAG
+  function paintHeat(cell, rgb){
+    cell.style.background = `rgb(${rgb.join(",")})`;
+    cell.style.color = contrastText(rgb);
+  }
+
+  function contrastText(rgb){
+    const lin = rgb.map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+    const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    // Contraste con blanco (L=1) frente a casi negro (L≈0.003)
+    return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.053) ? "#ffffff" : "#07090e";
   }
 
   // ================= FILTERS & SEARCH =================
@@ -390,13 +450,10 @@
 
     document.querySelectorAll(".legend-item").forEach(li => {
       li.classList.remove("active-filter", "disabled");
+      li.setAttribute("aria-pressed", "false");
     });
-    document.querySelectorAll("#phaseFilterGroup .filter-chip").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.phase === "all");
-    });
-    document.querySelectorAll("#blockFilterGroup .filter-chip").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.block === "all");
-    });
+    setActiveChip(phaseFilterGroup, phaseFilterGroup.querySelector('[data-phase="all"]'));
+    setActiveChip(blockFilterGroup, blockFilterGroup.querySelector('[data-block="all"]'));
 
     applyFilters();
   }
@@ -474,6 +531,11 @@
     const wasOpen = modalOverlay.classList.contains("active");
     modalOverlay.classList.add("active");
     document.body.style.overflow = "hidden";
+    if(!wasOpen){
+      // El resto de la página queda inerte mientras el diálogo está abierto
+      pageRegions().forEach(r => r.inert = true);
+      closeModalBtn.focus();
+    }
 
     renderAtom(el, shells);
     updateNavButtons();
@@ -503,6 +565,7 @@
     }
 
     if(atomViewer){
+      if(prefersReducedMotion && isSpinning) toggleSpinBtn.click(); // sin giro automático con movimiento reducido
       atomViewer.start();
       requestAnimationFrame(() => {
         atomViewer.onResize();
@@ -531,6 +594,10 @@
     return svg;
   }
 
+  function pageRegions(){
+    return document.querySelectorAll("body > :not(#modalOverlay):not(#toastNotification):not(script)");
+  }
+
   function periodOf(el){
     if(el.cat === "lantanido") return "6 (f)";
     if(el.cat === "actinido") return "7 (f)";
@@ -553,6 +620,13 @@
     if(!modalOverlay.classList.contains("active")) return;
     modalOverlay.classList.remove("active");
     document.body.style.overflow = "";
+    pageRegions().forEach(r => r.inert = false);
+    // Devolver el foco a la celda del último elemento visto
+    const lastCell = cellFor(currentNumber);
+    if(lastCell){
+      setRovingCell(lastCell);
+      lastCell.focus({ preventScroll: true });
+    }
     currentNumber = null;
     hideQuickTooltip();
     if(atomViewer) atomViewer.stop();
@@ -586,12 +660,19 @@
   // Color Mode dropdown
   colorModeSelect.addEventListener("change", applyColorMode);
 
+  // Sincroniza el estado visual y aria-pressed de un grupo de chips
+  function setActiveChip(group, chip){
+    group.querySelectorAll(".filter-chip").forEach(c => {
+      c.classList.toggle("active", c === chip);
+      c.setAttribute("aria-pressed", String(c === chip));
+    });
+  }
+
   // Phase filter buttons
   phaseFilterGroup.addEventListener("click", (e) => {
     const chip = e.target.closest(".filter-chip");
     if(!chip) return;
-    phaseFilterGroup.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
+    setActiveChip(phaseFilterGroup, chip);
     activePhaseFilter = chip.dataset.phase;
     applyFilters();
   });
@@ -600,8 +681,7 @@
   blockFilterGroup.addEventListener("click", (e) => {
     const chip = e.target.closest(".filter-chip");
     if(!chip) return;
-    blockFilterGroup.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
+    setActiveChip(blockFilterGroup, chip);
     activeBlockFilter = chip.dataset.block;
     applyFilters();
   });
@@ -667,6 +747,12 @@
     }
 
     if(modalOverlay.classList.contains("active")){
+      if(e.key === "Tab"){
+        const focusables = [...modal.querySelectorAll("button:not([disabled]), a[href], [tabindex='0']")].filter(n => n.offsetParent !== null);
+        const first = focusables[0], last = focusables[focusables.length - 1];
+        if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+        else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+      }
       if(e.key === "Escape") closeModal();
       if(e.key === "ArrowRight" && currentNumber < 118) openModal(currentNumber + 1);
       if(e.key === "ArrowLeft" && currentNumber > 1) openModal(currentNumber - 1);
